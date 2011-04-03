@@ -1,0 +1,14 @@
+{% extends "storynode/storynode_base.html"  %}
+{% block title %}StoryNode: {{ object.title }}{% endblock %}
+
+{% block content %}
+<div class="storyPageNavBox">
+<div class="storyPageNavForward">     
+<ul>
+{% for u in object_list %}
+<li><a class='choiceLink'  href='{% url indra.nodes.views.author_page u.username %}'>{{ u.username }}</a></li>
+{% endfor %}
+</ul>
+</div>
+</div>
+{% endblock %}

@@ -1,0 +1,127 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+        <meta name = "viewport" content = "width = 600">
+<!-- <script type="text/javascript" src="/javascript/wordcount.js"></script> -->
+
+<!--    <link rel="stylesheet" href="/django_projects/myproject/style.css" /> -->
+<title>{% block title %}LC Nodes{% endblock %}</title>
+
+<script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js">
+MathJax.Hub.Config({
+ extensions: ["tex2jax.js","TeX/AMSmath.js","TeX/AMSsymbols.js"],
+ jax: ["input/TeX", "output/HTML-CSS"],
+ tex2jax: {
+     inlineMath: [ ['$','$'], ["\\(","\\)"] ],
+     displayMath: [ ['$$','$$'], ["\\[","\\]"] ],
+ },
+ "HTML-CSS": { availableFonts: ["TeX"] }
+});
+</script>
+<link rel="stylesheet" href="http://lightningcatcher.org/storynodestyle.css" /> 
+{% block headercss %}{% endblock %}
+
+<script type='text/javascript'>
+function wordcount(w,x){
+var y=w.value;
+var r = 0;
+a=y.replace('\n',' ');
+a=a.split(' ');
+for (z=0; z<a.length; z++) {if (a[z].length > 0) r++;}
+x.value=r;
+};
+</script>
+
+
+</head>
+{% block bodyinit %}
+<body>
+{% endblock %}
+<div class="storyPageTop">
+
+ <div class="storyPageTitle"><a href='/storynode/' class='navLink'>{%if message %}{{ message }}{% else %}LightningCatcher.org{% endif %}</a> </div> 
+ <div class="storyPageNav">
+{% if user.is_authenticated %}
+ <a class='navLink' href="{% url indra.nodes.views.author_page user.username %}">(home)</a> 
+ <a  class='navLink' href="{% url indra.nodes.views.attach_node object.id %}">(attach)</a> 
+{% else %}
+ <a class='navLink' href="/nodes/">(home)</a> 
+{% endif %}
+
+{% if editable %}
+ <a class='navLink'  href="{{ object.get_absolute_url }}edit">(edit)</a> 
+{% endif %}
+
+{% block maplink %}
+{% if object.id %}
+   <a class='navLink'  href="/nodes/graph/node/{{ object.id  }}/">(map)</a>
+{% else %}
+   {% if graph_type %}
+   <a class='navLink'  href="/nodes/graph/{{ graph_type }}/{{ graph_target  }}/">(map)</a>
+   {% endif %}
+{% endif %}
+{% endblock %}
+{% if user.is_authenticated %}
+ <a class='navLink'  href="/nodes/logout/">(log out {{ user.username }})</a> 
+{% else %}
+ <a class='navLink'  href="/nodes/login/?next=/nodes/">(login)</a> 
+{% endif %}
+ </div>
+</div>
+
+{% block content %}
+
+<div class="storyTitle">
+Graph structured technical document platform.
+</div>
+<hr class="seperator">
+<div class="story">
+<div class="storyBody">
+
+LightningCatcher.org is a place and a tool to study together online. 
+
+In particular, we provide a platform which supports technical typesetting and display - 
+inlcuding mathematics, source code, and a node- rather than thread- based discussion architecture.
+
+We are built on Django and MathJax and InfoVis.js, and should run well on any modern browser. 
+
+You should see some math here:
+
+$$ \forall x \in \Bbb{P} \rightarrow \int_0^1 f(x) dx$$
+
+and an interactive node map here:
+
+If you don't see either of these, the site is probably not going to work for you and your browser, sorry.
+
+
+</div>
+
+<hr class="seperator">
+
+<div class="storyPageNavBackward">
+<ul>
+</div>
+
+<div class="storyPageNavBox">
+<div class="storyPageNavForward">
+
+<li><a class="choiceLink" href='/storynode/topstories/'>See some samples.</a></li>
+<li><a class="choiceLink" href='/storynode/authors/'>List Contributors.</a></li>
+<li><a class="choiceLink" href='/storynode/login/'>Create a new account or log in.</a></li>
+<li><a class="choiceLink" href='/storynode/login/'>Graph view</a></li>
+</ul>
+
+
+</div>
+</div>
+</div>
+</td>
+</tr>
+</table>
+
+
+{% endblock %}
+
+</body>
+</html>

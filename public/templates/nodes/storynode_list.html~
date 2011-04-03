@@ -1,0 +1,26 @@
+{% extends "storynode/storynode_base.html"  %}
+{% block title %}StoryNode: {{ object.title }}{% endblock %}
+
+
+
+{% block content %}
+
+{% if wordcount %}
+<h2>Total Word Count: {{ wordcount }}</h2>
+{% else %}
+Foo...
+{% endif %}
+
+<div class="storyPageNavBox">
+
+<div class="storyPageNavForward">     
+<ul>
+{% for o in object_list %}
+<li><a class='choiceLink' href='{{o.get_absolute_url }}'>{{ o.title }}
+{% if wordcount %}({{ o.wordcount }}){% endif %}</a></li>
+
+{% endfor %}
+</ul>
+</div>
+</div>
+{% endblock %}

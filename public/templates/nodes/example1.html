@@ -1,0 +1,49 @@
+{% extends "storynode/storynode_base.html" %}
+
+{% block title %}ForceDirected - Force Directed Static Graph{% endblock %}
+
+{% block headercss %}
+<!-- CSS Files -->
+<link type="text/css" href="http://scotfree.info/content/storynode_graph.css" rel="stylesheet" />
+<script language="javascript" type="text/javascript" src="http://scotfree.info/content/Jit/jit.js"></script>
+<script language="javascript" type="text/javascript" src="{{ datalink }}">{{ stuff }}</script>
+{% endblock %}
+
+
+{% block bodyinit %}
+<body onload="init();">
+{% endblock %}
+
+{% block maplink %} <a class='navLink'  href="/storynode/author/{{ user.username }}/">(author)</a> {% endblock %}
+
+{% block content %}
+<div id="container">
+<div id="left-container">
+        <div class="text">
+        <h4>Force Directed Static Story Graph    
+        </h4> 
+            You can <b>zoom</b> and <b>pan</b> the visualization by <b>scrolling</b> and <b>dragging</b>.<br /><br />
+            You can <b>change node positions</b> by <b>dragging the nodes around</b>.<br /><br />
+            The clicked node's connections are displayed in a relations list in the right column.<br /><br />
+        </div>
+        <div id="id-list"></div>
+
+<div style="text-align:center;"><a href="example1.js">See the Example Code</a></div>            
+</div>
+
+<div id="center-container">
+    <div id="infovis"></div>    
+</div>
+
+<div id="right-container">
+
+<div id="inner-details"></div>
+
+</div>
+
+<div id="log"></div>
+</div>
+</body>
+{% endblock %}
+
+</html>

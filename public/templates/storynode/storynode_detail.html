@@ -1,0 +1,52 @@
+{% extends "storynode/storynode_base.html"  %}
+{% block title %}StoryNode: {{ object.title }}{% endblock %}
+
+{% block content %}
+
+{% if object %}
+<div class="storyTitle">
+{{ object.title }}
+</div>
+(;,;)
+<div class="referencelink">
+<a href='{{ object.reference_url }}'>(ref)</a>
+</div>
+<hr class="seperator">
+<div class="story">
+<div class="storyBody">
+{{ object.body }}
+</div>
+
+<hr class="seperator">
+
+<div class="storyPageNavBackward">
+<ul>
+{% for o in object.comes_from.all %}
+<li><a href='{{ o.from_node.get_absolute_url }}'>{{ o.from_node }}</a></li>
+{% endfor %}
+</ul>
+</div>
+
+<div class="storyPageNavBox">
+<div class="storyPageNavForward">
+<ul>
+{% for o in object.goes_to.all %}
+<li><a class="choiceLink" href='{{ o.to_node.get_absolute_url }}'>{{ o.to_node }}</a></li>
+{% endfor %}
+</ul>
+</div>
+</div>
+</div>
+</td>
+</tr>
+</table>
+
+{% else %}
+No Content Detected, WTF
+{% endif %}
+
+{% endblock %}
+
+
+
+

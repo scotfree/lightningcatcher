@@ -1,0 +1,68 @@
+{% extends "storynode/storynode_base.html"  %}
+{% block title %}StoryNode: Edit{% endblock %}
+
+{% block content %}
+<div class="story">
+{% if form.errors %}
+Title Errors:
+
+{{ form.title.errors }}
+
+Body Errors:
+
+{{ form.body.errors }}
+
+<p>Something bad happened.</p>
+ <ol>
+    {% for error in form.errors %}
+        <li><strong>{{ error|escape }}</strong></li>
+    {% endfor %}
+ </ol>
+{% endif %}     
+{{ object.modified_at }}
+<form action="" method="post" class="storyForm" name="nodeform">
+<p>{{ form.title.label_tag }}:<br>{{ form.title }}<hr width="50%"></p>
+<p>{{ form.reference_url.label_tag }}:<br>{{ form.reference_url }}<hr width="50%"></p>
+<p>{{ form.body.label_tag }}<br>{{ form.body }}</p>
+<p>{{ form.author.label_tag }} {{ form.author }}<br>
+<input type="submit" value="Save" />
+<input type="text" name="c" value="0" size=5>
+<input type="button" value="Word Count" onClick="wordcount(form.body,c);">
+<input type="hidden" name="next" value="{{ next|default:object.get_absolute_url }}" />
+{% csrf_token %}
+</form>
+
+<div class="storyPageNavBox">
+
+<form action="delete/" method="post" class="storyForm" name="nodeform">
+<input type="submit" value="Delete this StoryNode!" />
+{% csrf_token %}
+</form>
+
+<div class="storyPageNavBack">
+Edit this StoryNode's Parents:
+<ul>
+{% for o in object.comes_from.all %}
+<li><a class="choiceLink" href='{{ o.from_node.get_absolute_url }}edit'>{{ o.from_node }}</a></li>
+{% endfor %}
+</ul>
+</div>
+
+<div class="storyPageNavForward">
+Edit this StoryNode's Children:
+<ul>
+{% for o in object.goes_to.all %}
+<li><a class="choiceLink" href='{{ o.to_node.get_absolute_url }}edit'>{{ o.to_node }}</a></li>
+{% endfor %}
+</ul>
+</div>
+</div>
+
+
+
+</div>
+
+
+
+{% endblock %}
+

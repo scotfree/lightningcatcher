@@ -1,0 +1,341 @@
+body {
+	margin: 0px 0px 0px 0px;
+	padding: 0px 0px 0px 0px;
+	font-family: times;
+	color: #000;
+	background-color: #ffffff;
+	font-size: 1.1em;
+	}
+
+
+.storyPageTitle {
+    text-align: right;
+    font-weight: 200;
+    float: right;   
+    color: #999; 
+    padding-right: 10px;
+    }
+
+a.navLink:link  {
+	text-decoration: none;
+        color: #999; 
+	outline: none;
+	}
+
+
+a.navLink:visited  {
+	text-decoration: none;
+        color: #999; 
+	outline: none;
+	}
+      
+
+a.navLink:hover  {
+	text-decoration: none;
+        color: #000; 
+	outline: none;
+	}
+
+a.navLink:active  {
+	text-decoration: none;
+        color: #000; 
+	outline: none;
+	}
+
+a.referencelink:visited  {
+    font-size: 20%;
+    text-transform: uppercase;
+    letter-spacing: .1ex;
+    text-align: center;
+    font-weight: 500;
+    text-decoration: none;
+    color: #700; 
+    outline: none;
+	}
+
+
+a.referencelink:link  {
+    font-size: 20%;
+    text-transform: uppercase;
+    letter-spacing: .1ex;
+    text-align: center;
+    font-weight: 500;
+    text-decoration: none;
+    color: #700; 
+    outline: none;
+	}
+
+
+
+
+strong, b {
+	font-weight: bold;
+	}
+
+.seperator {
+   width: 50%;
+   color: #000;
+   }
+
+.story {
+   text-align: center;
+   background-color: #fff;
+   width: 800px;
+   margin-bottom: 30px;
+   margin-left: auto; margin-right: auto;
+   } 
+
+.storyBody {
+   text-align: center;
+   white-space:pre-wrap;	
+   background-color: #fff;
+   width: 800px;
+   margin-bottom: 2em;
+   margin-left: auto; margin-right: auto;
+   } 
+
+
+.storyPageTop {
+    background: #ccc;
+    width: 100%;
+    margin-bottom: 0.2em;
+    }
+
+.storyPageNavBox {
+    text-align: center;
+    margin-left:auto;
+    margin-right:auto;
+    width:50%;
+    border-style: none;
+    border-thickness: 1px;
+    border-color: #999;
+}
+
+
+.storyPageNav {    
+    text-align: left;
+    font-weight: light;
+    font-style: oblique;   
+    padding-left: 10px;	 
+}
+
+
+.storyPageNavForward {
+    margin-left:auto;
+    margin-right:auto;
+    text-align: left;
+    font-weight: 100;
+    font-style: oblique;   
+    float: center;
+ }
+
+
+
+.storyPageNavBackward {
+    display: none;
+    text-align: center;
+    font-weight: 100;
+    font-style: oblique;   
+    float: left;
+ }
+
+
+
+
+
+#.storyTitle {
+#    text-align: center;
+#    margin-bottom: 2em;
+#}  
+
+.storyTitle {
+    font-size: 120%;
+    text-transform: uppercase;
+    letter-spacing: .5ex;
+    text-align: center;
+    font-weight: 900;
+}  
+
+
+.storyForm {
+   background-color: #fff;
+   width: 80%;
+   }
+
+input#id_title {
+   background-color: #eaeaee;
+   text-align: center;
+   width: 100%;
+   border-style:solid;
+   border-width:1px;
+   border-color: #000;	
+   font-family: Times;
+   font-size: 1.1em;      
+   white-space: pre-wrap;
+	}
+
+textarea#id_body {
+   background-color: #eaeaee;
+   text-align: center;
+   width: 100%;
+   border-style:solid;
+   border-width:1px;
+   border-color: #000;	
+   font-family: Arial;
+   font-size: 1em;   
+	}
+
+
+
+
+.storySummary {
+    font-size: 100%;
+    text-align: left;
+    font-weight: 100;
+    margin-bottom: 3em ;
+    border-bottom: 2px solid #000000;
+    border-top: 8px double #000000;
+    }  
+
+.storyChoice {
+    font-size: 100%;
+    text-align: right;
+    font-style: oblique;
+    margin-bottom: 0.5em;
+}  
+
+.storyAuthor {
+    font-size: 80%;
+    text-align: right;
+    font-weight: 100;
+    font-style: oblique;
+}  
+    
+
+
+a.choiceLink:link  {
+	text-decoration: none;
+        color: #444; 
+	outline: none;
+	}
+
+
+a.choiceLink:visited  {
+	text-decoration: none;
+        color: #444; 
+	outline: none;
+	}
+      
+
+a.choiceLink:hover  {
+	text-decoration: none;
+        color: #000; 
+	outline: none;
+	}
+
+a.choiceLink:active  {
+	text-decoration: none;
+        color: #f77; 
+	outline: none;
+	}
+
+
+
+
+
+/* weird ie5win bug: all line-height to font-size ratios must agree or box gets pushed around. UPDATE: this has turned out to be very rare. my current recommendation is IGNORE this warning. at the moment i'm leaving it in only in case the issue turns up again. possibly the original bug in march 2001 was caused by an unusual combination of factors, although this solved it at the time.*/
+
+h1 {
+	font-size: 24px;
+	line-height: 44px;
+	font-weight: bold;
+	margin-top: 0;
+	margin-bottom: 0;
+	}
+h2 {
+	font-size: 18px;
+	line-height: 40px;
+	font-weight: bold;
+	margin-top: 0;
+	margin-bottom: 0;
+        letter-spacing: .5ex;
+	}
+h3 {
+	font-size: 16px;
+	line-height: 22px;
+	font-weight: bold;
+	margin-top: 0;
+	margin-bottom: 0;
+	}
+h4 {
+	font-size: 14px;
+	line-height: 26px;
+	font-weight: bold;
+	margin-top: 0;
+	margin-bottom: 0;
+	}
+h5 {
+	font-size: 12px;
+	line-height: 22px;
+	font-weight: bold;
+	margin-top: 0;
+	margin-bottom: 0;
+	}
+h6 {
+	font-size: 10px;
+	line-height: 18px;
+	font-weight: bold;
+	margin-top: 0;
+	margin-bottom: 0;
+	}
+img {
+	border: 0;
+	}
+.nowrap {
+	white-space: nowrap;
+	font-size: 10px;
+	font-weight: bold;
+	margin-top: 0;
+	margin-bottom: 0;
+/* must be combined with nobr in html for ie5win */
+	}
+.tiny {
+	font-size: 9px;
+	line-height: 16px;
+	margin-top: 15px;
+	margin-bottom: 5px; 
+	}
+#content {
+	float: left;
+	padding: 10px 2% 10px 2%;
+	margin: 20px 1% 20px 2%;
+	background: #666;
+	border: 5px solid #ccc;
+	width: 44%; /* ie5win fudge begins */
+	voice-family: "\"}\"";
+	voice-family:inherit;
+	width: 41%;
+	}
+html>body #content {
+	width: 41%; /* ie5win fudge ends */
+	}
+#content2 {
+	float: right;
+	padding: 10px 2% 10px 2%;
+	margin: 20px 2% 20px 1%;
+	background: #666;
+	border: 5px solid #ccc;
+	width: 44%; /* ie5win fudge begins */
+	voice-family: "\"}\"";
+	voice-family:inherit;
+	width: 41%;
+	}
+html>body #content2 {
+	width: 41%; /* ie5win fudge ends */
+	}
+pre {
+	font-size: 12px;
+	line-height: 22px;
+	margin-top: 20px;
+	margin-bottom: 10px; 
+	}	
