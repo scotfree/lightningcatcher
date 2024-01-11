@@ -8,6 +8,12 @@ import pandas
 import numpy as np
 from itertools import chain
 
+pi = gmsh.pi
+copy = gmsh.model.occ.copy
+mirror = gmsh.model.occ.mirror
+synchronize = gmsh.model.occ.synchronize
+fuse = gmsh.model.occ.fuse
+
 # export files for mesh and image of mesh/model
 def save_mesh(context, meshpath, gifpath):  
     
@@ -38,11 +44,14 @@ def set_camera(camX=30.0,camY=60.0,camZ=0.0,camZoomX=5.0,camZoomY=5.0,camZoomZ=5
     gmsh.option.setNumber("General.TranslationZ", rotZ) # 296.8673379509896))
     gmsh.option.setNumber("General.ScaleX", camZoomX) 
     gmsh.option.setNumber("General.ScaleY", camZoomY) 
-    gmsh.option.setNumber("General.ScaleZ", camZoomZ)     
+    gmsh.option.setNumber("General.ScaleZ", camZoomZ)  
+    gmsh.option.setNumber("General.Axes", 1)  
 
 def initialize():
     gmsh.initialize()
     gmsh.option.setNumber("General.Verbosity", 0)
+    gmsh.option.setNumber("Mesh.MeshSizeFromPoints", 0)
+    gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 0)
 
 # SU2 Geometry
 
@@ -60,7 +69,7 @@ def make_sphere(c, radius=1.0):
 
 # Build a triangular volume    
 # This has a dependency on the order the points come in, which would be nice to fix...
-def make_triangle(rp0,rp1,rp2,d, mesh_size=1.0, recenter=True):
+def make_triangle(rp0,rp1,rp2,thickness, mesh_size=1.0, recenter=True):
     #print(f"making TRI: {rp0} | {rp1} | {rp2}...")
     p1 = gmsh.model.occ.addPoint(rp0[0], rp0[1], rp0[2], mesh_size)
     p2 = gmsh.model.occ.addPoint(rp1[0], rp1[1], rp1[2], mesh_size)
@@ -70,7 +79,7 @@ def make_triangle(rp0,rp1,rp2,d, mesh_size=1.0, recenter=True):
     l3 = gmsh.model.occ.addLine(p3,p1)
     c1 = gmsh.model.occ.addCurveLoop([l1,l2,l3])
     s1 = gmsh.model.occ.addPlaneSurface([c1])
-    nv = d*points_to_normal(rp0,rp1,rp2)
+    nv = thickness*points_to_normal(rp0,rp1,rp2)
     v1 = gmsh.model.occ.extrude([(2,s1)], nv[0], nv[1], nv[2])
     newVolTag = [x for x in v1 if x[0]==3]
     if recenter:
@@ -78,7 +87,7 @@ def make_triangle(rp0,rp1,rp2,d, mesh_size=1.0, recenter=True):
     #
     return newVolTag
 
-def make_sheet(rp0,rp1,rp2,rp3, d, mesh_size=1.0, recenter=True):
+def make_sheet(rp0,rp1,rp2,rp3, thickness, mesh_size=1.0, recenter=True):
     # print(f"making TRI: {rp0} | {rp1} | {rp2}...")
     p1 = gmsh.model.occ.addPoint(rp0[0], rp0[1], rp0[2], mesh_size)
     p2 = gmsh.model.occ.addPoint(rp1[0], rp1[1], rp1[2], mesh_size)
@@ -90,7 +99,7 @@ def make_sheet(rp0,rp1,rp2,rp3, d, mesh_size=1.0, recenter=True):
     l4 = gmsh.model.occ.addLine(p4,p1)
     c1 = gmsh.model.occ.addCurveLoop([l1,l2,l3, l4])
     s1 = gmsh.model.occ.addPlaneSurface([c1])
-    nv = d*points_to_normal(rp1,rp2,rp3)
+    nv = thickness*points_to_normal(rp1,rp2,rp3)
     v1 = gmsh.model.occ.extrude([(2,s1)], nv[0],nv[1],nv[2])
     newVolTag = [x for x in v1 if x[0]==3]
     if recenter:
@@ -147,8 +156,9 @@ def group_surfaces_radially(center=[0,0,0], threshold=6.0 ):
 def label_surfaces(labels, groups):
     # Set up physical groups for boundaries and markers in Simulation   
     for i,l,g in zip(range(len(groups)),labels, groups):
-        # print(f"adding Group {i+1} '{l}': [{g}]")
-        gmsh.model.addPhysicalGroup(2, g, i+1)
-        gmsh.model.setPhysicalName(2, i+1, l)            
+        print(f"adding Group {i+1} '{l}': [{g}]")
+        res=gmsh.model.addPhysicalGroup(2,  g, i+1)
+        gmsh.model.setPhysicalName(2, i+1, l)       
+        print(f"res: {res}")
 
 

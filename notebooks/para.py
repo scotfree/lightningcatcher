@@ -91,8 +91,8 @@ streamTracer1.Vectors = ['POINTS', 'Momentum']
 streamTracer1.MaximumStreamlineLength = 88.0
 
 # init the 'Line' selected for 'SeedType'
-streamTracer1.SeedType.Point1 = [-44.0, -34.0, -34.0]
-streamTracer1.SeedType.Point2 = [44.0, 34.0, 34.0]
+streamTracer1.SeedType.Point1 = [-4.0, 0.0, -14.0]
+streamTracer1.SeedType.Point2 = [-4.0, 0.0, 14.0]
 
 # show data in view
 streamTracer1Display = Show(streamTracer1, renderView1, 'GeometryRepresentation')

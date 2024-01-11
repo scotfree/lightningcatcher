@@ -16,7 +16,7 @@ import lightningcatcher_gmsh as geometry
 # build a config for a Solver to run a case:        
 def save_config(context, base_config_path='base.cfg'):
     config_path=os.path.join(context['project_name'], f"{context['case_name']}.cfg")
-    print(f"writing CNF: '{config_path}'\nCONTEXT: {context}\n")
+    # print(f"writing CNF: '{config_path}'\nCONTEXT: {context}\n")
     project_config=open(base_config_path).read().format(**context)
     
     with open(config_path,'w') as f:
@@ -27,7 +27,7 @@ def save_config(context, base_config_path='base.cfg'):
 
 ### SU2 Run Simulation
 
-def run_simulation(config, as_row=True, extract=['lift', 'drag']):
+def run_su2(config, as_row=True, extract=['lift', 'drag']):
 
     config['surface_flow_path'] = f"{config['case_name']}-surface_flow.csv"
     subprocess.run(["/Users/scot/Projects/SU2/bin/SU2_CFD", config['simconfpath']])
@@ -40,6 +40,7 @@ extractors = {
 }
 
     
+    
 def extract_simulation_values(config, extracts=['lift', 'drag']):
     sdf=pandas.read_csv( os.path.join(config['project_name'],config['surface_flow_path']))
     # cvg=pandas.read_csv( os.path.join(config['project_name'],config['convergence_history_path']))
@@ -50,7 +51,7 @@ def extract_simulation_values(config, extracts=['lift', 'drag']):
 # SU2 Execution
 
 
-def single_simulation(base_conf, build_model, do_meshing=True, do_run=True, do_extract=[],
+def single_simulation(base_conf, build_model, do_meshing=True, run_simulation=True, do_extract=[],
                       define_surface_groups=True, show_group_boundary=False, 
                       interactive=False, 
                       as_row=False, new_columns=['meshpath', 'imagepath'],
@@ -59,33 +60,69 @@ def single_simulation(base_conf, build_model, do_meshing=True, do_run=True, do_e
     c['imagepath']=f"{c['project_name']}/{c['case_name']}.jpg"
     c['meshpath'] = f"{c['project_name']}/{c['case_name']}.su2"
     c['simconfpath'] = f"{c['project_name']}/{c['case_name']}.cfg"
+    res = c['mesh_resolution']
     
     m1 = build_model(do_meshing=do_meshing, **c)
     
     gmsh.model.occ.synchronize()
-    if do_meshing:
-        boundary_scale_z = 2.0
-        boundary_scale_y = 4.0
-        box = geometry.make_sheet([-1*c['x_size'], 0.0, -boundary_scale_z*c['y_size']],
-                    [3*c['x_size'], 0.0, -boundary_scale_z*c['y_size']],
-                    [3*c['x_size'], 0.0, boundary_scale_z*c['y_size']],
-                    [-1*c['x_size'], 0.0, boundary_scale_z*c['y_size']], 
-                    c['box_size'])#     boundary_scale_y*c['y_size'])
-        v1, v1h = gmsh.model.occ.cut(box,m1)
-        gmsh.model.occ.synchronize()
-        # Assign a mesh size to all the points:
-        gmsh.model.mesh.setSize(gmsh.model.getEntities(0), c['meshsize_large'])
-        gmsh.model.mesh.generate(3)
 
-    model_center = [c['x_size']/2,0,0]
+
+    model_center = [c['paper_size_x']/2,0,0]
     if show_group_boundary:
         geometry.make_sphere(model_center, c['group_boundary_size'])
     gmsh.model.occ.synchronize()
     
-    if define_surface_groups:
+
+    
+    if do_meshing:
+        # This seems like the wrong place for meshing...
+        boundary_scale_z = 2.0
+        boundary_scale_y = 4.0
+        box = geometry.make_sheet([-1*c['paper_size_x'], 0.0, -boundary_scale_z*c['paper_size_y']],
+                    [3*c['paper_size_x'], 0.0, -boundary_scale_z*c['paper_size_y']],
+                    [3*c['paper_size_x'], 0.0, boundary_scale_z*c['paper_size_y']],
+                    [-1*c['paper_size_x'], 0.0, boundary_scale_z*c['paper_size_y']], 
+                    c['bounding_box_size'])#     boundary_scale_y*c['paper_size_y'])
+        v1, v1h = gmsh.model.occ.cut(box,m1)
+        gmsh.model.occ.synchronize()
         near_group, far_group = geometry.group_surfaces_radially(center=model_center, threshold=c['group_boundary_size'] )
+        
+        
+        distance = gmsh.model.mesh.field.add("Distance")
+        gmsh.model.mesh.field.setNumbers(distance, "FacesList", near_group)
+        # print(f"Setting distance to: {near_group}")
+    
+        
+        threshold = gmsh.model.mesh.field.add("Threshold")
+        gmsh.model.mesh.field.setNumber(threshold, "IField", distance)
+        gmsh.model.mesh.field.setNumber(threshold, "SizeMin", c['mesh_sizemin_scale']*res)
+        gmsh.model.mesh.field.setNumber(threshold, "SizeMax", c['mesh_sizemax_scale']*res)
+        gmsh.model.mesh.field.setNumber(threshold, "DistMin", c['mesh_distmin_scale']*res)
+        gmsh.model.mesh.field.setNumber(threshold, "DistMax", c['mesh_distmax_scale']*res)
+
+        gmsh.model.mesh.field.setAsBackgroundMesh(threshold)
+#         Mesh.MeshSizeFromPoints = 0;
+#         Mesh.MeshSizeFromCurvature = 0;
+#         Mesh.MeshSizeExtendFromBoundary = 0;
+        
+        # Assign a mesh size to all the points:
+        #gmsh.model.mesh.setSize(gmsh.model.getEntities(0), c['meshsize_large'])
+
+        #plane_points = gmsh.model.getEntitiesInBoundingBox(0, -2, -2, 5, 2, 2, dim=0)
+        #print(f"Got PPoints: {plane_points}")
+        #gmsh.model.mesh.setSize(plane_points, c['meshsize_small'])
+        # gmsh.model.mesh.setSize([(0,s) for s in near_group], c['meshsize_small'])
+        # gmsh.model.mesh.setSize([(0,s) for s in far_group], c['meshsize_large'])
+        # print(f"MESH:\n {c['meshsize_small']} @ near {near_group}\n{c['meshsize_large']} @ far {far_group}")
+        gmsh.model.occ.synchronize()
+        gmsh.model.mesh.generate(3)
+        gmsh.model.occ.synchronize()
+    
+    if define_surface_groups:
+        
         geometry.label_surfaces(['Plane', 'Walls'], [near_group, far_group])
         gmsh.model.occ.synchronize()
+    
     
     geometry.save_mesh(c,c['meshpath'], c['imagepath'])
     save_config(context=c)
@@ -93,8 +130,8 @@ def single_simulation(base_conf, build_model, do_meshing=True, do_run=True, do_e
         gmsh.fltk.run()
     gmsh.finalize()
     
-    if do_run:
-        new_columns += run_simulation(c)
+    if run_simulation:
+        new_columns += run_su2(c)
         if do_extract:
             new_columns += extract_simulation_values(c, do_extract)
     if as_row:
