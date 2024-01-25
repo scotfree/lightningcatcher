@@ -9,11 +9,16 @@ from paraview.simple import *
 paraview.simple._DisableFirstRenderCameraReset()
 import sys
 
-project_name=sys.argv[1]
+# If we're not handing them in on CLI, make sure these are populated already (ie, if running interactively in Paraview...)
+if len(sys.argv) > 1:
+    project_name=sys.argv[1]
+    im_text = sys.argv[2]
+    base_dir = sys.argv[3]
+    
 print(f"para-processing {project_name}...")
 
 # create a new 'XML Unstructured Grid Reader'
-lcplane000flowvtu = XMLUnstructuredGridReader(registrationName=f"{project_name}-flow.vtu", FileName=[f"/Users/scot/Projects/Personal/lightningcatcher/notebooks/{project_name}-flow.vtu"])
+lcplane000flowvtu = XMLUnstructuredGridReader(registrationName=f"{project_name}-flow.vtu", FileName=[f"{base_dir}/{project_name}-flow.vtu"])
 lcplane000flowvtu.PointArrayStatus = ['Density', 'Momentum', 'Energy', 'Pressure', 'Temperature', 'Mach', 'Pressure_Coefficient']
 
 # Properties modified on lcplane000flowvtu
@@ -58,13 +63,13 @@ lcplane000flowvtuDisplay.ScaleTransferFunction.Points = [-0.2120128870010376, 0.
 lcplane000flowvtuDisplay.OpacityTransferFunction.Points = [-0.2120128870010376, 0.0, 0.5, 0.0, 1.0691198110580444, 1.0, 0.5, 0.0]
 
 # reset view to fit data
-renderView1.ResetCamera(False)
+# renderView1.ResetCamera(False)
 
 # get the material library
 materialLibrary1 = GetMaterialLibrary()
 
 # update the view to ensure updated data information
-renderView1.Update()
+# renderView1.Update()
 
 # set scalar coloring
 ColorBy(lcplane000flowvtuDisplay, ('POINTS', 'Pressure'))
@@ -91,8 +96,8 @@ streamTracer1.Vectors = ['POINTS', 'Momentum']
 streamTracer1.MaximumStreamlineLength = 88.0
 
 # init the 'Line' selected for 'SeedType'
-streamTracer1.SeedType.Point1 = [-4.0, 0.0, -14.0]
-streamTracer1.SeedType.Point2 = [-4.0, 0.0, 14.0]
+streamTracer1.SeedType.Point1 = [0, -8.0, -0.2]
+streamTracer1.SeedType.Point2 = [0.0, 8.0, -0.2]
 
 # show data in view
 streamTracer1Display = Show(streamTracer1, renderView1, 'GeometryRepresentation')
@@ -155,33 +160,18 @@ layout1 = GetLayout()
 layout1.SetSize(2022, 1454)
 
 # current camera placement for renderView1
-renderView1.CameraPosition = [-3, 0, -0.5]
-renderView1.CameraViewUp = [0.008, 0.9688985990904215, -0.27108711464643994]
-renderView1.CameraParallelScale = 1.0 #65.1766829472013
+renderView1.CameraPosition = [-5, 3, 0]
+#renderView1.CameraViewUp = [0.008, 0.9688985990904215, -0.27108711464643994]
+#renderView1.CameraParallelScale = 1.0 #65.1766829472013
+
+#renderView1.AdjustAzimuth(0.0)
+renderView1.AdjustElevation(-10.0)
+renderView1.AdjustRoll(90.0)
+
+text1 = Text()
+text1.Text = im_text
+text1Display = Show(text1, renderView1, 'TextSourceRepresentation')
+
 
 # save screenshot
 SaveScreenshot(f"/Users/scot/Projects/Personal/lightningcatcher/notebooks/{project_name}-para.png", renderView1, ImageResolution=[2022, 1454])
-
-#================================================================
-# addendum: following script captures some of the application
-# state to faithfully reproduce the visualization during playback
-#================================================================
-
-#--------------------------------
-# saving layout sizes for layouts
-
-# layout/tab size in pixels
-layout1.SetSize(2022, 1454)
-
-#-----------------------------------
-# saving camera placements for views
-
-# current camera placement for renderView1
-renderView1.CameraPosition = [-20.745766695224276, 3.5118985476939204, 7.614168193557116]
-renderView1.CameraViewUp = [0.17878675533320262, 0.9688985990904215, -0.17108711464643994]
-renderView1.CameraParallelScale = 5.1766829472013
-
-#--------------------------------------------
-# uncomment the following to render all views
-# RenderAllViews()
-# alternatively, if you want to write images, you can use SaveScreenshot(...).

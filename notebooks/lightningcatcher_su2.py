@@ -27,25 +27,36 @@ def save_config(context, base_config_path='base.cfg'):
 
 ### SU2 Run Simulation
 
-def run_su2(config, as_row=True, extract=['lift', 'drag']):
+def run_su2(config, as_row=True, extract=['lift', 'drag'], stdout_to_log=True):
 
     config['surface_flow_path'] = f"{config['case_name']}-surface_flow.csv"
-    subprocess.run(["/Users/scot/Projects/SU2/bin/SU2_CFD", config['simconfpath']])
-    return ['surface_flow_path']
+    config['convergence_history_path'] = f"{config['case_name']}-convergence_history.csv"
+    if stdout_to_log:
+        with open(f"{config['project_name']}/{config['case_name']}-su2.log", "w") as outfile:
+            subprocess.run([config['sim_path'], config['simconfpath']], stdout=outfile)
+    else:
+        subprocess.run([config['sim_path'], config['simconfpath']])
+    return ['surface_flow_path','convergence_history_path']
+
     
 extractors = {
-    'lift': lambda sdf: float(sdf[['Momentum_y']].sum()),
-    'drag': lambda sdf: float(sdf[['Momentum_x']].sum()),
+    'momentum_z': lambda sdf,hdf: float(sdf[['Momentum_z']].sum()),
+    'momentum_x': lambda sdf,hdf: float(sdf[['Momentum_x']].sum()),
+    'lift_coeff': lambda sdf,hdf: float(hdf.iloc[-1][['CL']]),
+    'drag_coeff': lambda sdf,hdf: float(hdf.iloc[-1][['CD']]),
+    'eff_coeff': lambda sdf,hdf: float(hdf.iloc[-1][['CEff']])    
     #'time': lambda sdf, cvg: float(cvg[['Time']].max())
 }
 
     
     
 def extract_simulation_values(config, extracts=['lift', 'drag']):
-    sdf=pandas.read_csv( os.path.join(config['project_name'],config['surface_flow_path']))
-    # cvg=pandas.read_csv( os.path.join(config['project_name'],config['convergence_history_path']))
+    surfaces_df=pandas.read_csv( os.path.join(config['project_name'],config['surface_flow_path']))
+    #raw_historical_df=pandas.read_csv( os.path.join(config['project_name'],config['convergence_history_path']))
+    rhdf=pandas.read_csv( os.path.join(config['project_name'],config['convergence_history_path']))
+    historical_df=rhdf.rename(columns=lambda x: x.strip().replace('"',''))
     for extract_name in extracts:
-        config[extract_name] = extractors[extract_name](sdf)
+        config[extract_name] = extractors[extract_name](surfaces_df, historical_df)
     return extracts
 
 # SU2 Execution
@@ -53,13 +64,14 @@ def extract_simulation_values(config, extracts=['lift', 'drag']):
 
 def single_simulation(base_conf, build_model, do_meshing=True, run_simulation=True, do_extract=[],
                       define_surface_groups=True, show_group_boundary=False, 
-                      interactive=False, 
+                      interactive=False, stdout_to_log=True,
                       as_row=False, new_columns=['meshpath', 'imagepath'],
                       **kwargs):
     c = dict(chain(base_conf.items(), kwargs.items()))
     c['imagepath']=f"{c['project_name']}/{c['case_name']}.jpg"
     c['meshpath'] = f"{c['project_name']}/{c['case_name']}.su2"
     c['simconfpath'] = f"{c['project_name']}/{c['case_name']}.cfg"
+    # c['aoa_rads'] = np.deg2rad(c['angle_of_attack']),
     res = c['mesh_resolution']
     
     m1 = build_model(do_meshing=do_meshing, **c)
@@ -78,10 +90,10 @@ def single_simulation(base_conf, build_model, do_meshing=True, run_simulation=Tr
         # This seems like the wrong place for meshing...
         boundary_scale_z = 2.0
         boundary_scale_y = 4.0
-        box = geometry.make_sheet([-1*c['paper_size_x'], 0.0, -boundary_scale_z*c['paper_size_y']],
-                    [3*c['paper_size_x'], 0.0, -boundary_scale_z*c['paper_size_y']],
-                    [3*c['paper_size_x'], 0.0, boundary_scale_z*c['paper_size_y']],
-                    [-1*c['paper_size_x'], 0.0, boundary_scale_z*c['paper_size_y']], 
+        box = geometry.make_sheet([-1*c['paper_size_x'], 0.0, -boundary_scale_z*c['paper_size_z']],
+                    [3*c['paper_size_x'], 0.0, -boundary_scale_z*c['paper_size_z']],
+                    [3*c['paper_size_x'], 0.0, boundary_scale_z*c['paper_size_z']],
+                    [-1*c['paper_size_x'], 0.0, boundary_scale_z*c['paper_size_z']], 
                     c['bounding_box_size'])#     boundary_scale_y*c['paper_size_y'])
         v1, v1h = gmsh.model.occ.cut(box,m1)
         gmsh.model.occ.synchronize()
@@ -131,7 +143,7 @@ def single_simulation(base_conf, build_model, do_meshing=True, run_simulation=Tr
     gmsh.finalize()
     
     if run_simulation:
-        new_columns += run_su2(c)
+        new_columns += run_su2(c, stdout_to_log=stdout_to_log)
         if do_extract:
             new_columns += extract_simulation_values(c, do_extract)
     if as_row:
