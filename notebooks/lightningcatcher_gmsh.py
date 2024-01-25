@@ -1,5 +1,16 @@
 # Convenience and Utility functions for GMSH
 
+# Installation & Interface
+# ========================
+# The binary can be aqcuired from here. Make sure to grab the correct version, ie, Mac with/out ARM
+#     https://gmsh.info/#Download
+#
+#
+# There are a few lovely `gmsh` python interfaces and toolsets out there, but we'll just use the one that comes with the software itself. So you should be fine with a:
+# `pip install gmsh`
+# ------------------------
+
+
 import gmsh
 import math
 

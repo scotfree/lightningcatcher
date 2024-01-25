@@ -1,4 +1,15 @@
-# Convenience and Utility functions for GMSH
+# Convenience and Utility functions for SU2
+
+
+# Installation & Interface
+# ========================
+# The binary download will include useful python examples and tooling, and can be aqcuired from here:
+#     https://su2code.github.io/download.html
+#
+# We use here the simplest version, and don't worry about MPI.
+#
+# We'll just need the path to the `SU2` executable stored in `cfd_path`
+# ------------------------
 
 import gmsh
 import math
