@@ -167,9 +167,9 @@ def group_surfaces_radially(center=[0,0,0], threshold=6.0 ):
 def label_surfaces(labels, groups):
     # Set up physical groups for boundaries and markers in Simulation   
     for i,l,g in zip(range(len(groups)),labels, groups):
-        print(f"adding Group {i+1} '{l}': [{g}]")
+        # print(f"adding Group {i+1} '{l}': [{g}]")
         res=gmsh.model.addPhysicalGroup(2,  g, i+1)
         gmsh.model.setPhysicalName(2, i+1, l)       
-        print(f"res: {res}")
+        # print(f"res: {res}")
 
 
