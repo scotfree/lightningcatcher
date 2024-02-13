@@ -24,21 +24,27 @@ copy = gmsh.model.occ.copy
 mirror = gmsh.model.occ.mirror
 synchronize = gmsh.model.occ.synchronize
 fuse = gmsh.model.occ.fuse
+finalize = gmsh.finalize
 
+
+# e2,e2['meshpath'], f"{e2['project_name']}/{e2['project_name']}-001.jpg"
 # export files for mesh and image of mesh/model
-def save_mesh(context, meshpath, gifpath):  
-    
+def save_mesh(context, meshpath, imagepath):     
     if  not os.path.isdir(context['project_name']):
         print(f"Creating project dir: `{context['project_name']}`")
         print( os.mkdir(context['project_name']))
         
-    if gifpath:
+    if imagepath:
         gmsh.fltk.initialize()
-        gmsh.write( gifpath)
-        gmsh.fltk.finalize()        
+        gmsh.write( imagepath)
+        gmsh.fltk.finalize()
+        context['imagepath'] = imagepath
     if meshpath:
         gmsh.option.setNumber('Mesh.SaveAll', 1)
         gmsh.write(meshpath)
+        context['meshpath'] = meshpath
+    gmsh.finalize()
+    return context
 
 
 # build a case - geometry, mesh, physical context, solver params. Maybe should be factored a little...
@@ -173,3 +179,40 @@ def label_surfaces(labels, groups):
         # print(f"res: {res}")
 
 
+        
+def add_mesh(config):
+    # Create a big bounding box around our object:
+    volume = config['geometry_index']
+    print(f"Volume: {volume}\nConfig: {config}")
+    boundary_scale_z = 2.0
+    boundary_scale_y = 4.0
+    c,m1 = config,volume
+    box = make_sheet([-1*c['paper_size_x'], 0.0, -boundary_scale_z*c['paper_size_z']],
+                [3*c['paper_size_x'], 0.0, -boundary_scale_z*c['paper_size_z']],
+                [3*c['paper_size_x'], 0.0, boundary_scale_z*c['paper_size_z']],
+                [-1*c['paper_size_x'], 0.0, boundary_scale_z*c['paper_size_z']], 
+                c['bounding_box_size'])#     boundary_scale_y*c['paper_size_y'])
+    v1, v1h = gmsh.model.occ.cut(box,m1)
+    gmsh.model.occ.synchronize()
+    model_center = [c['paper_size_x']/2,0,0]
+    res = c['mesh_resolution']
+    near_group, far_group = group_surfaces_radially(center=model_center, threshold=c['group_boundary_size'] )
+
+    distance = gmsh.model.mesh.field.add("Distance")
+    gmsh.model.mesh.field.setNumbers(distance, "FacesList", near_group)        
+    threshold = gmsh.model.mesh.field.add("Threshold")
+    gmsh.model.mesh.field.setNumber(threshold, "IField", distance)
+    gmsh.model.mesh.field.setNumber(threshold, "SizeMin", c['mesh_sizemin_scale']*res)
+    gmsh.model.mesh.field.setNumber(threshold, "SizeMax", c['mesh_sizemax_scale']*res)
+    gmsh.model.mesh.field.setNumber(threshold, "DistMin", c['mesh_distmin_scale']*res)
+    gmsh.model.mesh.field.setNumber(threshold, "DistMax", c['mesh_distmax_scale']*res)
+    gmsh.model.mesh.field.setAsBackgroundMesh(threshold)
+    gmsh.model.occ.synchronize()
+    gmsh.model.mesh.generate(3)
+    gmsh.model.occ.synchronize()  
+    # if define_surface_groups:        
+    label_surfaces(['Plane', 'Walls'], [near_group, far_group])
+    gmsh.model.occ.synchronize()       
+    c['meshpath'] = f"{c['project_name']}/{c['case_name']}.su2"
+    # save_mesh(c,c['meshpath'], c['imagepath'])
+    return c

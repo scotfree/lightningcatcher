@@ -72,12 +72,31 @@ def extract_simulation_values(config, extracts=['lift', 'drag']):
 
 # SU2 Execution
 
+def run_simulation(c,stdout_to_log=True,do_extract=[]):
+    save_config(context=c)
+
+    # gmsh.finalize()
+    
+    # generate actual simulation results
+    c['simconfpath'] = f"{c['project_name']}/{c['case_name']}.cfg"
+    new_columns = run_su2(c, stdout_to_log=stdout_to_log)
+    if do_extract:
+        new_columns += extract_simulation_values(c, do_extract)
+            
+    # return - do we use as_row at all anymore?        
+    #if as_row:
+    #    return pandas.Series([run_dict[c] for c in new_columns])
+    #else:
+    #    return c
+    return c
 
 def single_simulation(base_conf, build_model, do_meshing=True, run_simulation=True, do_extract=[],
                       define_surface_groups=True, show_group_boundary=False, 
                       interactive=False, stdout_to_log=True,
                       as_row=False, new_columns=['meshpath', 'imagepath'],
                       **kwargs):
+    
+    # build sim config/state from base and any params in kwargs, set some derived metadata
     c = dict(chain(base_conf.items(), kwargs.items()))
     c['imagepath']=f"{c['project_name']}/{c['case_name']}.jpg"
     c['meshpath'] = f"{c['project_name']}/{c['case_name']}.su2"
@@ -85,18 +104,16 @@ def single_simulation(base_conf, build_model, do_meshing=True, run_simulation=Tr
     # c['aoa_rads'] = np.deg2rad(c['angle_of_attack']),
     res = c['mesh_resolution']
     
+    # generate geometry
     m1 = build_model(do_meshing=do_meshing, **c)
-    
-    gmsh.model.occ.synchronize()
-
-
-    model_center = [c['paper_size_x']/2,0,0]
-    if show_group_boundary:
-        geometry.make_sphere(model_center, c['group_boundary_size'])
     gmsh.model.occ.synchronize()
     
-
+    #if show_group_boundary:
+    #    model_center = [c['paper_size_x']/2,0,0]
+    #    geometry.make_sphere(model_center, c['group_boundary_size'])
+    gmsh.model.occ.synchronize()
     
+    # generate meshing
     if do_meshing:
         # This seems like the wrong place for meshing...
         boundary_scale_z = 2.0
@@ -109,54 +126,36 @@ def single_simulation(base_conf, build_model, do_meshing=True, run_simulation=Tr
         v1, v1h = gmsh.model.occ.cut(box,m1)
         gmsh.model.occ.synchronize()
         near_group, far_group = geometry.group_surfaces_radially(center=model_center, threshold=c['group_boundary_size'] )
-        
-        
+               
         distance = gmsh.model.mesh.field.add("Distance")
-        gmsh.model.mesh.field.setNumbers(distance, "FacesList", near_group)
-        # print(f"Setting distance to: {near_group}")
-    
-        
+        gmsh.model.mesh.field.setNumbers(distance, "FacesList", near_group)        
         threshold = gmsh.model.mesh.field.add("Threshold")
         gmsh.model.mesh.field.setNumber(threshold, "IField", distance)
         gmsh.model.mesh.field.setNumber(threshold, "SizeMin", c['mesh_sizemin_scale']*res)
         gmsh.model.mesh.field.setNumber(threshold, "SizeMax", c['mesh_sizemax_scale']*res)
         gmsh.model.mesh.field.setNumber(threshold, "DistMin", c['mesh_distmin_scale']*res)
         gmsh.model.mesh.field.setNumber(threshold, "DistMax", c['mesh_distmax_scale']*res)
-
         gmsh.model.mesh.field.setAsBackgroundMesh(threshold)
-#         Mesh.MeshSizeFromPoints = 0;
-#         Mesh.MeshSizeFromCurvature = 0;
-#         Mesh.MeshSizeExtendFromBoundary = 0;
-        
-        # Assign a mesh size to all the points:
-        #gmsh.model.mesh.setSize(gmsh.model.getEntities(0), c['meshsize_large'])
-
-        #plane_points = gmsh.model.getEntitiesInBoundingBox(0, -2, -2, 5, 2, 2, dim=0)
-        #print(f"Got PPoints: {plane_points}")
-        #gmsh.model.mesh.setSize(plane_points, c['meshsize_small'])
-        # gmsh.model.mesh.setSize([(0,s) for s in near_group], c['meshsize_small'])
-        # gmsh.model.mesh.setSize([(0,s) for s in far_group], c['meshsize_large'])
-        # print(f"MESH:\n {c['meshsize_small']} @ near {near_group}\n{c['meshsize_large']} @ far {far_group}")
         gmsh.model.occ.synchronize()
         gmsh.model.mesh.generate(3)
-        gmsh.model.occ.synchronize()
-    
-    if define_surface_groups:
-        
+        gmsh.model.occ.synchronize()  
+    if define_surface_groups:        
         geometry.label_surfaces(['Plane', 'Walls'], [near_group, far_group])
-        gmsh.model.occ.synchronize()
-    
-    
+        gmsh.model.occ.synchronize()       
     geometry.save_mesh(c,c['meshpath'], c['imagepath'])
+    
     save_config(context=c)
     if interactive:
         gmsh.fltk.run()
     gmsh.finalize()
     
+    # generate actual simulation results
     if run_simulation:
         new_columns += run_su2(c, stdout_to_log=stdout_to_log)
         if do_extract:
             new_columns += extract_simulation_values(c, do_extract)
+            
+    # return - do we use as_row at all anymore?        
     if as_row:
         return pandas.Series([run_dict[c] for c in new_columns])
     else:
