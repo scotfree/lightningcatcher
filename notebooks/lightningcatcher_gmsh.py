@@ -183,7 +183,7 @@ def label_surfaces(labels, groups):
 def add_mesh(config):
     # Create a big bounding box around our object:
     volume = config['geometry_index']
-    print(f"Volume: {volume}\nConfig: {config}")
+    # print(f"Volume: {volume}\nConfig: {config}")
     boundary_scale_z = 2.0
     boundary_scale_y = 4.0
     c,m1 = config,volume

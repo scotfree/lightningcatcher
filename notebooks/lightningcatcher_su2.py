@@ -68,7 +68,7 @@ def extract_simulation_values(config, extracts=['lift', 'drag']):
     historical_df=rhdf.rename(columns=lambda x: x.strip().replace('"',''))
     for extract_name in extracts:
         config[extract_name] = extractors[extract_name](surfaces_df, historical_df)
-    return extracts
+    return config
 
 # SU2 Execution
 
