@@ -27,6 +27,9 @@ fuse = gmsh.model.occ.fuse
 finalize = gmsh.finalize
 
 
+def image_filename(sim):
+    return f"{sim['project_name']}/{sim['case_name']}.jpg"
+
 # e2,e2['meshpath'], f"{e2['project_name']}/{e2['project_name']}-001.jpg"
 # export files for mesh and image of mesh/model
 def save_mesh(context, meshpath, imagepath):     

@@ -3,7 +3,12 @@
 #paraview.compatibility.major = 5
 #paraview.compatibility.minor = 11
 
+"""
 #### import the simple module from the paraview
+project_name='z4/z4-001'
+base_dir="/Users/scot/Projects/Personal/lightningcatcher/notebooks/"
+im_text="foo" 
+"""
 from paraview.simple import *
 #### disable automatic camera reset on 'Show'
 paraview.simple._DisableFirstRenderCameraReset()
@@ -14,6 +19,12 @@ if len(sys.argv) > 1:
     project_name=sys.argv[1]
     im_text = sys.argv[2]
     base_dir = sys.argv[3]
+
+# project_name='z4/z4-001'
+# base_dir="/Users/scot/Projects/Personal/lightningcatcher/notebooks/"
+# im_text="foo"    
+    
+    
     
 print(f"para-processing {project_name}...")
 
@@ -103,9 +114,42 @@ streamTracer1.SeedType.Point2 = [0.0, 8.0, -0.2]
 streamTracer1Display = Show(streamTracer1, renderView1, 'GeometryRepresentation')
 
 # trace defaults for the display properties.
-streamTracer1Display.Representation = 'Surface'
-streamTracer1Display.ColorArrayName = ['POINTS', 'Pressure']
-streamTracer1Display.LookupTable = pressureLUT
+# streamTracer1Display.Representation = 'Surface'
+# streamTracer1Display.ColorArrayName = ['POINTS', 'Pressure']
+# streamTracer1Display.LookupTable = pressureLUT
+# streamTracer1Display.SelectTCoordArray = 'None'
+# streamTracer1Display.SelectNormalArray = 'None'
+# streamTracer1Display.SelectTangentArray = 'None'
+# streamTracer1Display.OSPRayScaleArray = 'AngularVelocity'
+# streamTracer1Display.OSPRayScaleFunction = 'PiecewiseFunction'
+# streamTracer1Display.SelectOrientationVectors = 'Normals'
+# streamTracer1Display.ScaleFactor = 8.799880599975586
+# streamTracer1Display.SelectScaleArray = 'AngularVelocity'
+# streamTracer1Display.GlyphType = 'Arrow'
+# streamTracer1Display.GlyphTableIndexArray = 'AngularVelocity'
+# streamTracer1Display.GaussianRadius = 0.4399940299987793
+# streamTracer1Display.SetScaleArray = ['POINTS', 'AngularVelocity']
+# streamTracer1Display.ScaleTransferFunction = 'PiecewiseFunction'
+# streamTracer1Display.OpacityArray = ['POINTS', 'AngularVelocity']
+# streamTracer1Display.OpacityTransferFunction = 'PiecewiseFunction'
+# streamTracer1Display.DataAxesGrid = 'GridAxesRepresentation'
+# streamTracer1Display.PolarAxes = 'PolarAxesRepresentation'
+# streamTracer1Display.SelectInputVectors = ['POINTS', 'Normals']
+# streamTracer1Display.WriteLog = ''
+
+# get 2D transfer function for 'Momentum'
+momentumTF2D = GetTransferFunction2D('Momentum')
+
+# get color transfer function/color map for 'Momentum'
+momentumLUT = GetColorTransferFunction('Momentum')
+momentumLUT.TransferFunction2D = momentumTF2D
+momentumLUT.RGBPoints = [0.3113357682574002, 0.231373, 0.298039, 0.752941, 0.6990243462186545, 0.865003, 0.865003, 0.865003, 1.0867129241799087, 0.705882, 0.0156863, 0.14902]
+momentumLUT.ScalarRangeInitialized = 1.0
+
+# trace defaults for the display properties.
+streamTracer1Display.Representation = 'Surface With Edges'
+streamTracer1Display.ColorArrayName = ['POINTS', 'Momentum']
+streamTracer1Display.LookupTable = momentumLUT
 streamTracer1Display.SelectTCoordArray = 'None'
 streamTracer1Display.SelectNormalArray = 'None'
 streamTracer1Display.SelectTangentArray = 'None'
@@ -125,6 +169,16 @@ streamTracer1Display.DataAxesGrid = 'GridAxesRepresentation'
 streamTracer1Display.PolarAxes = 'PolarAxesRepresentation'
 streamTracer1Display.SelectInputVectors = ['POINTS', 'Normals']
 streamTracer1Display.WriteLog = ''
+
+# init the 'PiecewiseFunction' selected for 'ScaleTransferFunction'
+streamTracer1Display.ScaleTransferFunction.Points = [-10.42719843533777, 0.0, 0.5, 0.0, 5.656404272293395, 1.0, 0.5, 0.0]
+
+# init the 'PiecewiseFunction' selected for 'OpacityTransferFunction'
+streamTracer1Display.OpacityTransferFunction.Points = [-10.42719843533777, 0.0, 0.5, 0.0, 5.656404272293395, 1.0, 0.5, 0.0]
+
+
+
+
 
 # init the 'PiecewiseFunction' selected for 'ScaleTransferFunction'
 streamTracer1Display.ScaleTransferFunction.Points = [-10.42719843533777, 0.0, 0.5, 0.0, 5.656404272293395, 1.0, 0.5, 0.0]
@@ -160,13 +214,14 @@ layout1 = GetLayout()
 layout1.SetSize(2022, 1454)
 
 # current camera placement for renderView1
-renderView1.CameraPosition = [-5, 3, 0]
+# renderView1.CameraPosition = [-5, 3, 0]
+renderView1.CameraPosition = [18, 0.25, 1.5]
 #renderView1.CameraViewUp = [0.008, 0.9688985990904215, -0.27108711464643994]
 #renderView1.CameraParallelScale = 1.0 #65.1766829472013
 
-#renderView1.AdjustAzimuth(0.0)
+# renderView1.AdjustAzimuth(180.0)
 renderView1.AdjustElevation(-10.0)
-renderView1.AdjustRoll(90.0)
+renderView1.AdjustRoll(-90.0)
 
 text1 = Text()
 text1.Text = im_text
