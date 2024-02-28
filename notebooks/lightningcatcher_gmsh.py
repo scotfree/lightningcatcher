@@ -27,6 +27,33 @@ fuse = gmsh.model.occ.fuse
 finalize = gmsh.finalize
 
 
+default_config = {
+    "meshsize_large": 5.0,           # uniform meshing for now
+    "meshsize_small": 0.8,  
+    "mesh_resolution": 0.2,
+    "mesh_sizemin_scale": 5.0,
+    "mesh_sizemax_scale": 25.0,
+    "mesh_distmin_scale": 10.0,
+    "mesh_distmax_scale": 50.0,
+    "group_boundary_size": 6.0,
+    "bounding_box_size": 15.0,    
+    "full_fold_radians" : pi,     # usually pi, unless we fold loosely
+    "wing_tilt_radians" : pi/2.0,  # wing angle with fuselage
+    "camZoom":5.0,
+    "camOffsetX":0.0,
+    "camOffsetY":0.0,
+    "paper_size_x" : 11.0,                 # sheet of paper height
+    "paper_size_z": 4.25,                  # paper width
+    "paper_thickness":0.1, 
+    "body_tilt_radians" : pi/8.0,  # main fuselage fold angle
+    "camX":30.0,                     # Camera positioning
+    "camY":60.0,
+    "camZ":0.0,
+    "camOffsetZ":0.0
+}
+    
+
+
 def image_filename(sim):
     return f"{sim['project_name']}/{sim['case_name']}.jpg"
 
