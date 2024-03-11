@@ -59,7 +59,7 @@ def image_filename(sim):
 
 # e2,e2['meshpath'], f"{e2['project_name']}/{e2['project_name']}-001.jpg"
 # export files for mesh and image of mesh/model
-def save_mesh(context, meshpath, imagepath):     
+def save_mesh(context, meshpath, imagepath, interactive=False):     
     if  not os.path.isdir(context['project_name']):
         print(f"Creating project dir: `{context['project_name']}`")
         print( os.mkdir(context['project_name']))
@@ -73,6 +73,8 @@ def save_mesh(context, meshpath, imagepath):
         gmsh.option.setNumber('Mesh.SaveAll', 1)
         gmsh.write(meshpath)
         context['meshpath'] = meshpath
+    if interactive:
+        gmsh.fltk.run()
     gmsh.finalize()
     return context
 
