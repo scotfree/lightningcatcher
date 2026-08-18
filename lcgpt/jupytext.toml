@@ -1,0 +1,5 @@
+# Pair every notebook with a MyST-markdown mirror alongside it.
+# Rationale: prose + LaTeX stay readable as real markdown, which makes git
+# diffs legible and lets cells be pasted into the chat surface verbatim.
+# Switch "md:myst" to "py:percent" if an executable-script mirror is wanted instead.
+formats = "ipynb,md:myst"
