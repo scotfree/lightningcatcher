@@ -55,3 +55,30 @@ cp data/names.txt input.txt && .venv/bin/python karpathy_gpt.py
 ```
 
 A full 1000-step run takes roughly 185 seconds (~3 min) on system Python 3.9.
+
+## karpathy_gpt_cli.py
+
+The same algorithm with a command line, for when you want to run it rather than
+read it. `karpathy_gpt.py` itself is never edited — the notebooks quote it by
+line number — so the conveniences live in a separate file.
+
+```sh
+.venv/bin/python karpathy_gpt_cli.py --num-steps 200 --num-docs 5000
+.venv/bin/python karpathy_gpt_cli.py --model model.json
+```
+
+| flag | meaning |
+|---|---|
+| `--num-steps N` | training steps (default 1000). Alias: `--training-runs` |
+| `--num-docs N` | use only the first N documents after shuffling (default: all) |
+| `--model PATH` | load and sample if PATH exists, otherwise train and save there (default `model.json`) |
+
+Two things to know:
+
+- **The tokenizer is saved with the weights.** `uchars` is derived from whichever
+  documents were used, so `--num-docs 3` yields a 14-token vocabulary, and
+  rebuilding the tokenizer at load time would misalign the ids. The model file
+  carries `uchars` and the config, which is also why loading needs no dataset.
+- **A model file is loaded in preference to training.** Running with no arguments
+  when `model.json` already exists will sample from it rather than retrain.
+  Delete it or pass a different `--model` path to train again.

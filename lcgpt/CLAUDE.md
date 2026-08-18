@@ -36,6 +36,15 @@ describing what a specific cell does, nothing more. No narrative voice.
   be pasted into the chat surface verbatim.
 - **Word-level tokenizer demo (design doc §6.3): Beatles lyrics, PLACEHOLDER
   ONLY.** Corpus and scope are explicitly not yet designed. Do not build it out.
+- **CLI conveniences live in `karpathy_gpt_cli.py`, not in the anchor.** Argparse
+  and checkpointing would shift every line number in `karpathy_gpt.py`, breaking
+  56 line references and 35 verbatim code cells across the notebooks. The CLI
+  file duplicates the algorithm verbatim and adds `--num-steps`, `--num-docs`
+  and `--model`. If the algorithm is ever changed, both files must change.
+  (Decided 2026-08-18.)
+- **Model files are JSON** (`format: lcgpt-1`), carrying config, `uchars` and the
+  weights. The tokenizer ships with the weights because `uchars` depends on which
+  documents were used, so it cannot be safely rebuilt at load time.
 - **Data is committed** (`data/names.txt`, 32,032 names, longest 15 chars —
   which is what motivates `block_size=16`). Reason: notebooks stay reproducible
   offline; the upstream raw.githubusercontent fetch rate-limits.
