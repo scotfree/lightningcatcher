@@ -58,8 +58,12 @@ describing what a specific cell does, nothing more. No narrative voice.
 - A JupyterLab 4.5.9 server already runs on **localhost:8888**, but it is rooted
   at `/Users/scotfree/projects/games/gettingthere` and cannot reach this
   directory. See README for how notebooks actually get opened.
-- The full 1000-step training run takes ~185s (3 min) on CPU, so notebooks can train live
-  rather than shipping cached weights.
+- The full 1000-step training run takes ~63s on CPU (~0.06 s/step plus a ~1.2 s
+  floor dominated by the 20 inference samples), so notebooks can train live
+  rather than shipping cached weights. Runtime scales with step count only —
+  `--num-docs` is not a speed lever. An earlier figure of 185s in this file was
+  a single unreproducible measurement, corrected 2026-08-18 against repeated
+  runs at 200, 400 and 1000 steps.
 
 ## Node structure (design doc §5)
 

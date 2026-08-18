@@ -54,7 +54,10 @@ download it if absent. To run it against the committed copy:
 cp data/names.txt input.txt && .venv/bin/python karpathy_gpt.py
 ```
 
-A full 1000-step run takes roughly 185 seconds (~3 min) on system Python 3.9.
+A full 1000-step run takes roughly 63 seconds on system Python 3.9 — about
+0.06 s per step on top of a ~1.2 s fixed cost, most of which is the 20
+inference samples at the end. Runtime scales with step count only; the number
+of documents makes no measurable difference.
 
 ## karpathy_gpt_cli.py
 
