@@ -34,14 +34,22 @@ describing what a specific cell does, nothing more. No narrative voice.
 - **jupytext pairing** to `md:myst` alongside each `.ipynb` (`jupytext.toml`).
   Reason: prose and LaTeX stay real markdown, so diffs are legible and cells can
   be pasted into the chat surface verbatim.
-- **Word-level tokenizer demo (design doc §6.3): Beatles lyrics, PLACEHOLDER
-  ONLY.** Corpus and scope are explicitly not yet designed. Do not build it out.
+- **Word-level tokenizing now exists in the CLI** (`--token-type word`), which is
+  the mechanism the design doc §6.3 demo needs. Measured on
+  `data/beatles_first3.txt`: 612-token vocabulary, 22,912 parameters, and the
+  truncation problem inverts — 89% of documents overflow `block_size` as letters,
+  1 as words. **Notebook 01 §1.8 is still a PLACEHOLDER**: the demo's framing and
+  scope are not designed, only the plumbing exists.
+- **The lyrics corpus is never committed.** It is copyrighted; `data_attributions.md`
+  is the authority. `data/beatles_first3.txt` is gitignored and regenerated locally
+  via `get_lcgpt_corpus.py`. It was committed and pushed public once, on
+  2026-08-18, and removed by a full history rewrite the same day.
 - **CLI conveniences live in `karpathy_gpt_cli.py`, not in the anchor.** Argparse
   and checkpointing would shift every line number in `karpathy_gpt.py`, breaking
   56 line references and 35 verbatim code cells across the notebooks. The CLI
   file duplicates the algorithm verbatim and adds `--num-steps`, `--num-docs`
-  `--corpus-file` and `--model`. If the algorithm is ever changed, both files
-  must change.
+  `--corpus-file`, `--token-type` and `--model`. If the algorithm is ever changed,
+  both files must change.
   (Decided 2026-08-18.)
 - **Model files are JSON** (`format: lcgpt-1`), carrying config, `uchars` and the
   weights. The tokenizer ships with the weights because `uchars` depends on which

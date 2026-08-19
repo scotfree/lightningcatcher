@@ -75,6 +75,7 @@ line number — so the conveniences live in a separate file.
 | `--num-steps N` | training steps (default 1000). Alias: `--training-runs` |
 | `--num-docs N` | use only the first N documents after shuffling (default: all) |
 | `--corpus-file P` | train on P, one document per line (default `input.txt`) |
+| `--token-type T` | `letter` (default, what the anchor does) or `word` |
 | `--model PATH` | load and sample if PATH exists, otherwise train and save there (default `model.json`) |
 
 Two things to know:
@@ -86,9 +87,17 @@ Two things to know:
 - **Only the default corpus is auto-downloaded.** A missing `input.txt` is fetched
   from makemore; any other `--corpus-file` path must already exist, so a typo
   fails loudly rather than quietly training on names.
+- **`--token-type word` changes only the tokenizer.** Everything from the `Value`
+  class onward is untouched — the model never learns what a token *is*, only how
+  many there are. On `data/beatles_first3.txt` the vocabulary goes 61 → 612 and
+  the parameter count 5,280 → 22,912, since `wte` and `lm_head` are both sized by
+  vocabulary. Word tokens are lowercased, with the curly apostrophe folded onto
+  the straight one and punctuation trimmed off each end.
 - **`block_size = 16` is sized for names, not prose.** On a corpus with longer
   lines the run prints how many documents get truncated — 89% of
-  `data/beatles_first3.txt`, for instance, since its mean line is ~30 characters.
+  `data/beatles_first3.txt` under `--token-type letter`, since its mean line is
+  ~30 characters. Under `--token-type word` that drops to a single document — a
+  lyric line is only a handful of words, so the same corpus fits the window.
 - **A model file is loaded in preference to training.** Running with no arguments
   when `model.json` already exists will sample from it rather than retrain.
   Delete it or pass a different `--model` path to train again.

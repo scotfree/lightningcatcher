@@ -8,13 +8,14 @@ three conveniences bolted on and nothing else changed:
     --num-steps N    how many training steps to run   (alias: --training-runs)
     --num-docs N     use only the first N documents
     --corpus-file P  train on P instead of input.txt, one document per line
+    --token-type T   'letter' (default, what the anchor does) or 'word'
     --model PATH     load a saved model and sample from it; if PATH does not
                      exist, train and save there instead
 
 Still dependency-free: argparse and json are standard library.
 
     python karpathy_gpt_cli.py --num-steps 200 --num-docs 5000
-    python karpathy_gpt_cli.py --corpus-file data/beatles_first3.txt
+    python karpathy_gpt_cli.py --corpus-file data/beatles_first3.txt --token-type word
     python karpathy_gpt_cli.py --model model.json
 """
 
@@ -33,11 +34,29 @@ parser.add_argument('--num-docs', type=int, default=None, dest='num_docs',
                     help='use only the first N documents after shuffling (default: all)')
 parser.add_argument('--corpus-file', type=str, default=DEFAULT_CORPUS, dest='corpus_file',
                     help=f'training corpus, one document per line (default: {DEFAULT_CORPUS})')
+parser.add_argument('--token-type', choices=('letter', 'word'), default='letter', dest='token_type',
+                    help='how documents are split into tokens (default: letter)')
 parser.add_argument('--model', type=str, default='model.json', dest='model_path',
                     help='model file; loaded if it exists, otherwise written after training (default: model.json)')
 args = parser.parse_args()
 
 random.seed(42) # Let there be order among chaos
+
+# A document becomes a list of token strings. 'letter' is exactly what the anchor
+# does inline with `[uchars.index(ch) for ch in doc]`. 'word' lowercases, folds the
+# curly apostrophe onto the straight one, and trims punctuation off each end so that
+# "Yeah," "yeah" and "yeah!" are one token rather than three. Nothing downstream of
+# here cares which was chosen -- from the tokenizer onward it is all just integers.
+WORD_TRIM = '!"\'(),-.?\u2014'
+
+def doc_to_tokens(doc, token_type):
+    if token_type == 'letter':
+        return list(doc)
+    cleaned = (w.strip(WORD_TRIM) for w in doc.lower().replace('\u2019', "'").split())
+    return [w for w in cleaned if w]
+
+def tokens_to_text(tokens, token_type):
+    return ('' if token_type == 'letter' else ' ').join(tokens)
 
 # Let there be Autograd to recursively apply the chain rule through a computation graph
 class Value:
@@ -146,7 +165,7 @@ def save_model(path):
     blob = {
         'format': 'lcgpt-1',
         'config': {'n_layer': n_layer, 'n_embd': n_embd, 'block_size': block_size,
-                   'n_head': n_head, 'vocab_size': vocab_size},
+                   'n_head': n_head, 'vocab_size': vocab_size, 'token_type': args.token_type},
         'uchars': uchars,
         'state_dict': {name: [[p.data for p in row] for row in mat] for name, mat in state_dict.items()},
     }
@@ -170,6 +189,7 @@ if os.path.exists(args.model_path):
     cfg, uchars, state_dict = load_model(args.model_path)
     n_layer, n_embd, block_size = cfg['n_layer'], cfg['n_embd'], cfg['block_size']
     n_head, vocab_size = cfg['n_head'], cfg['vocab_size']
+    args.token_type = cfg.get('token_type', 'letter') # older files predate the flag
     head_dim = n_embd // n_head
     BOS = len(uchars)
 
@@ -192,10 +212,10 @@ else:
     print(f"num docs: {len(docs)}")
 
     # Let there be a Tokenizer to translate strings to sequences of integers ("tokens") and back
-    uchars = sorted(set(''.join(docs))) # unique characters in the dataset become token ids 0..n-1
+    uchars = sorted({t for d in docs for t in doc_to_tokens(d, args.token_type)}) # unique tokens become ids 0..n-1
     BOS = len(uchars) # token id for a special Beginning of Sequence (BOS) token
     vocab_size = len(uchars) + 1 # total number of unique tokens, +1 is for BOS
-    print(f"vocab size: {vocab_size}")
+    print(f"vocab size: {vocab_size} ({args.token_type} tokens)")
 
     # Initialize the parameters, to store the knowledge of the model
     n_layer = 1     # depth of the transformer neural network (number of layers)
@@ -217,7 +237,7 @@ else:
 
     # Documents longer than the context window are silently cut short by the
     # `n = min(block_size, ...)` below. Worth saying out loud on an unfamiliar corpus.
-    over = sum(1 for d in docs if len(d) + 1 > block_size)
+    over = sum(1 for d in docs if len(doc_to_tokens(d, args.token_type)) + 1 > block_size)
     if over:
         print(f"note: {over} of {len(docs)} documents ({100 * over / len(docs):.0f}%) are longer than "
               f"block_size={block_size} and will be truncated")
@@ -233,7 +253,7 @@ else:
 
         # Take single document, tokenize it, surround it with BOS special token on both sides
         doc = docs[step % len(docs)]
-        tokens = [BOS] + [uchars.index(ch) for ch in doc] + [BOS]
+        tokens = [BOS] + [uchars.index(tok) for tok in doc_to_tokens(doc, args.token_type)] + [BOS]
         n = min(block_size, len(tokens) - 1)
 
         # Forward the token sequence through the model, building up the computation graph all the way to the loss
@@ -279,4 +299,4 @@ for sample_idx in range(20):
         if token_id == BOS:
             break
         sample.append(uchars[token_id])
-    print(f"sample {sample_idx+1:2d}: {''.join(sample)}")
+    print(f"sample {sample_idx+1:2d}: {tokens_to_text(sample, args.token_type)}")
