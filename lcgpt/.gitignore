@@ -3,3 +3,5 @@ __pycache__/
 .ipynb_checkpoints/
 input.txt
 model.json
+data/beatles_first3.txt
+model*.json
