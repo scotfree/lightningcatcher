@@ -74,6 +74,7 @@ line number — so the conveniences live in a separate file.
 |---|---|
 | `--num-steps N` | training steps (default 1000). Alias: `--training-runs` |
 | `--num-docs N` | use only the first N documents after shuffling (default: all) |
+| `--corpus-file P` | train on P, one document per line (default `input.txt`) |
 | `--model PATH` | load and sample if PATH exists, otherwise train and save there (default `model.json`) |
 
 Two things to know:
@@ -82,6 +83,12 @@ Two things to know:
   documents were used, so `--num-docs 3` yields a 14-token vocabulary, and
   rebuilding the tokenizer at load time would misalign the ids. The model file
   carries `uchars` and the config, which is also why loading needs no dataset.
+- **Only the default corpus is auto-downloaded.** A missing `input.txt` is fetched
+  from makemore; any other `--corpus-file` path must already exist, so a typo
+  fails loudly rather than quietly training on names.
+- **`block_size = 16` is sized for names, not prose.** On a corpus with longer
+  lines the run prints how many documents get truncated — 89% of
+  `data/beatles_first3.txt`, for instance, since its mean line is ~30 characters.
 - **A model file is loaded in preference to training.** Running with no arguments
   when `model.json` already exists will sample from it rather than retrain.
   Delete it or pass a different `--model` path to train again.

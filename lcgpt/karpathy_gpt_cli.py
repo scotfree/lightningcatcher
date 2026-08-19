@@ -7,12 +7,14 @@ three conveniences bolted on and nothing else changed:
 
     --num-steps N    how many training steps to run   (alias: --training-runs)
     --num-docs N     use only the first N documents
+    --corpus-file P  train on P instead of input.txt, one document per line
     --model PATH     load a saved model and sample from it; if PATH does not
                      exist, train and save there instead
 
 Still dependency-free: argparse and json are standard library.
 
     python karpathy_gpt_cli.py --num-steps 200 --num-docs 5000
+    python karpathy_gpt_cli.py --corpus-file data/beatles_first3.txt
     python karpathy_gpt_cli.py --model model.json
 """
 
@@ -22,11 +24,15 @@ import math
 import random
 import argparse
 
+DEFAULT_CORPUS = 'input.txt' # downloaded on first use if absent; any other path must already exist
+
 parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 parser.add_argument('--num-steps', '--training-runs', type=int, default=1000, dest='num_steps',
                     help='number of training steps (default: 1000)')
 parser.add_argument('--num-docs', type=int, default=None, dest='num_docs',
                     help='use only the first N documents after shuffling (default: all)')
+parser.add_argument('--corpus-file', type=str, default=DEFAULT_CORPUS, dest='corpus_file',
+                    help=f'training corpus, one document per line (default: {DEFAULT_CORPUS})')
 parser.add_argument('--model', type=str, default='model.json', dest='model_path',
                     help='model file; loaded if it exists, otherwise written after training (default: model.json)')
 args = parser.parse_args()
@@ -169,15 +175,20 @@ if os.path.exists(args.model_path):
 
 else:
 
-    # Let there be a Dataset `docs`: list[str] of documents (e.g. a list of names)
-    if not os.path.exists('input.txt'):
+    # Let there be a Dataset `docs`: list[str] of documents (e.g. a list of names).
+    # The default corpus is fetched on first use; any other path must already exist,
+    # so a typo fails loudly instead of silently downloading names over the top of it.
+    if not os.path.exists(args.corpus_file):
+        if args.corpus_file != DEFAULT_CORPUS:
+            raise SystemExit(f"{args.corpus_file}: no such file")
         import urllib.request
         names_url = 'https://raw.githubusercontent.com/karpathy/makemore/988aa59/names.txt'
-        urllib.request.urlretrieve(names_url, 'input.txt')
-    docs = [line.strip() for line in open('input.txt') if line.strip()]
+        urllib.request.urlretrieve(names_url, DEFAULT_CORPUS)
+    docs = [line.strip() for line in open(args.corpus_file) if line.strip()]
     random.shuffle(docs)
     if args.num_docs is not None:
         docs = docs[:args.num_docs]
+    print(f"corpus: {args.corpus_file}")
     print(f"num docs: {len(docs)}")
 
     # Let there be a Tokenizer to translate strings to sequences of integers ("tokens") and back
@@ -203,6 +214,13 @@ else:
         state_dict[f'layer{i}.mlp_fc2'] = matrix(n_embd, 4 * n_embd)
     params = [p for mat in state_dict.values() for row in mat for p in row] # flatten params into a single list[Value]
     print(f"num params: {len(params)}")
+
+    # Documents longer than the context window are silently cut short by the
+    # `n = min(block_size, ...)` below. Worth saying out loud on an unfamiliar corpus.
+    over = sum(1 for d in docs if len(d) + 1 > block_size)
+    if over:
+        print(f"note: {over} of {len(docs)} documents ({100 * over / len(docs):.0f}%) are longer than "
+              f"block_size={block_size} and will be truncated")
 
     # Let there be Adam, the blessed optimizer and its buffers
     learning_rate, beta1, beta2, eps_adam = 0.01, 0.85, 0.99, 1e-8

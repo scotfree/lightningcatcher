@@ -40,7 +40,8 @@ describing what a specific cell does, nothing more. No narrative voice.
   and checkpointing would shift every line number in `karpathy_gpt.py`, breaking
   56 line references and 35 verbatim code cells across the notebooks. The CLI
   file duplicates the algorithm verbatim and adds `--num-steps`, `--num-docs`
-  and `--model`. If the algorithm is ever changed, both files must change.
+  `--corpus-file` and `--model`. If the algorithm is ever changed, both files
+  must change.
   (Decided 2026-08-18.)
 - **Model files are JSON** (`format: lcgpt-1`), carrying config, `uchars` and the
   weights. The tokenizer ships with the weights because `uchars` depends on which
