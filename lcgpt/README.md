@@ -61,8 +61,8 @@ of documents makes no measurable difference.
 
 ## karpathy_gpt_cli.py
 
-The same algorithm with a command line, for when you want to run it rather than
-read it. `karpathy_gpt.py` itself is never edited — the notebooks quote it by
+The same algorithm with a command line and an importable API, for when you want
+to run it rather than read it. `karpathy_gpt.py` itself is never edited — the notebooks quote it by
 line number — so the conveniences live in a separate file.
 
 ```sh
@@ -98,6 +98,30 @@ Two things to know:
   `data/beatles_first3.txt` under `--token-type letter`, since its mean line is
   ~30 characters. Under `--token-type word` that drops to a single document — a
   lyric line is only a handful of words, so the same corpus fits the window.
+### As a library
+
+A *config* is a plain dict holding hyperparameters, tokenizer and weights
+together — they are meaningless apart, since token ids only mean anything
+relative to the `uchars` they were trained against. `derive()` recomputes
+`head_dim`, `vocab_size` and `BOS` and is called by everything that builds a
+config, so they cannot drift.
+
+```python
+import karpathy_gpt_cli as lc
+
+config = lc.get_model('beatles_word1.json')   # loads, or trains and saves
+lc.generate(config, num_samples=5)
+
+docs   = lc.load_corpus('data/beatles_first3.txt', num_docs=500)
+config = lc.new_config(docs, token_type='word', n_embd=32)
+lc.train(config, docs, num_steps=200)
+lc.save_model('mine.json', config)
+```
+
+`gpt()` takes the config as its first argument rather than reading globals, so a
+notebook can hold several models at once. Every function takes `verbose=False`
+to stay quiet. Note that importing the module calls `random.seed(42)`.
+
 - **A model file is loaded in preference to training.** Running with no arguments
   when `model.json` already exists will sample from it rather than retrain.
   Delete it or pass a different `--model` path to train again.

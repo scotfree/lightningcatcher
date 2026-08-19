@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""A command-line wrapper around karpathy_gpt.py.
+"""A command-line and importable wrapper around karpathy_gpt.py.
 
 karpathy_gpt.py is this project's fixed reference artifact and is never edited:
-the notebooks quote it by line number. This file is that same algorithm, with
-three conveniences bolted on and nothing else changed:
+the notebooks quote it by line number. This file is that same algorithm, made
+importable and given a few conveniences.
+
+As a script it behaves exactly as before:
 
     --num-steps N    how many training steps to run   (alias: --training-runs)
     --num-docs N     use only the first N documents
@@ -12,11 +14,25 @@ three conveniences bolted on and nothing else changed:
     --model PATH     load a saved model and sample from it; if PATH does not
                      exist, train and save there instead
 
-Still dependency-free: argparse and json are standard library.
-
     python karpathy_gpt_cli.py --num-steps 200 --num-docs 5000
     python karpathy_gpt_cli.py --corpus-file data/beatles_first3.txt --token-type word
     python karpathy_gpt_cli.py --model model.json
+
+As a library, a "config" is a plain dict carrying the hyperparameters, the
+tokenizer and the weights together -- they are meaningless apart, since token ids
+only mean anything relative to the `uchars` they were trained against:
+
+    import karpathy_gpt_cli as lc
+
+    config = lc.get_model('beatles_word1.json')     # loads, or trains and saves
+    lc.generate(config, num_samples=5)
+
+    docs   = lc.load_corpus('data/beatles_first3.txt', num_docs=500)
+    config = lc.new_config(docs, token_type='word')
+    lc.train(config, docs, num_steps=200)
+    lc.save_model('mine.json', config)
+
+Still dependency-free: argparse and json are standard library.
 """
 
 import os
@@ -26,33 +42,36 @@ import random
 import argparse
 
 DEFAULT_CORPUS = 'input.txt' # downloaded on first use if absent; any other path must already exist
+DEFAULT_MODEL = 'model.json'
+NAMES_URL = 'https://raw.githubusercontent.com/karpathy/makemore/988aa59/names.txt'
 
-parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-parser.add_argument('--num-steps', '--training-runs', type=int, default=1000, dest='num_steps',
-                    help='number of training steps (default: 1000)')
-parser.add_argument('--num-docs', type=int, default=None, dest='num_docs',
-                    help='use only the first N documents after shuffling (default: all)')
-parser.add_argument('--corpus-file', type=str, default=DEFAULT_CORPUS, dest='corpus_file',
-                    help=f'training corpus, one document per line (default: {DEFAULT_CORPUS})')
-parser.add_argument('--token-type', choices=('letter', 'word'), default='letter', dest='token_type',
-                    help='how documents are split into tokens (default: letter)')
-parser.add_argument('--model', type=str, default='model.json', dest='model_path',
-                    help='model file; loaded if it exists, otherwise written after training (default: model.json)')
-args = parser.parse_args()
+# The architecture. Overridable via new_config(**overrides), but these are the
+# numbers the notebooks describe and the anchor hard-codes.
+CONFIG_DEFAULTS = {
+    'n_layer': 1,     # depth of the transformer neural network (number of layers)
+    'n_embd': 16,     # width of the network (embedding dimension)
+    'block_size': 16, # maximum context length of the attention window
+    'n_head': 4,      # number of attention heads
+    'token_type': 'letter',
+}
 
-random.seed(42) # Let there be order among chaos
+# Adam's knobs, kept separate because they describe training rather than the model
+# and so are deliberately not saved with the weights.
+TRAIN_DEFAULTS = {'learning_rate': 0.01, 'beta1': 0.85, 'beta2': 0.99, 'eps_adam': 1e-8}
+
+random.seed(42) # Let there be order among chaos. Note: this runs at import time.
 
 # A document becomes a list of token strings. 'letter' is exactly what the anchor
 # does inline with `[uchars.index(ch) for ch in doc]`. 'word' lowercases, folds the
 # curly apostrophe onto the straight one, and trims punctuation off each end so that
 # "Yeah," "yeah" and "yeah!" are one token rather than three. Nothing downstream of
 # here cares which was chosen -- from the tokenizer onward it is all just integers.
-WORD_TRIM = '!"\'(),-.?\u2014'
+WORD_TRIM = '!"\'(),-.?—'
 
 def doc_to_tokens(doc, token_type):
     if token_type == 'letter':
         return list(doc)
-    cleaned = (w.strip(WORD_TRIM) for w in doc.lower().replace('\u2019', "'").split())
+    cleaned = (w.strip(WORD_TRIM) for w in doc.lower().replace('’', "'").split())
     return [w for w in cleaned if w]
 
 def tokens_to_text(tokens, token_type):
@@ -119,7 +138,10 @@ def rmsnorm(x):
     scale = (ms + 1e-5) ** -0.5
     return [xi * scale for xi in x]
 
-def gpt(token_id, pos_id, keys, values):
+def gpt(config, token_id, pos_id, keys, values):
+    state_dict = config['state_dict']
+    n_layer, n_head, head_dim = config['n_layer'], config['n_head'], config['head_dim']
+
     tok_emb = state_dict['wte'][token_id] # token embedding
     pos_emb = state_dict['wpe'][pos_id] # position embedding
     x = [t + p for t, p in zip(tok_emb, pos_emb)] # joint token and position embedding
@@ -157,103 +179,105 @@ def gpt(token_id, pos_id, keys, values):
     logits = linear(x, state_dict['lm_head'])
     return logits
 
-# Saving and loading. The tokenizer travels with the weights: `uchars` is derived
-# from whichever documents were used for training, so a model trained on a subset
-# (--num-docs) may have a smaller vocabulary than one trained on everything, and
-# the ids would not line up if the tokenizer were rebuilt at load time.
-def save_model(path):
-    blob = {
-        'format': 'lcgpt-1',
-        'config': {'n_layer': n_layer, 'n_embd': n_embd, 'block_size': block_size,
-                   'n_head': n_head, 'vocab_size': vocab_size, 'token_type': args.token_type},
-        'uchars': uchars,
-        'state_dict': {name: [[p.data for p in row] for row in mat] for name, mat in state_dict.items()},
-    }
-    with open(path, 'w') as f:
-        json.dump(blob, f)
-    print(f"saved model to {path}")
+# ---------------------------------------------------------------- the config dict
 
-def load_model(path):
-    with open(path) as f:
-        blob = json.load(f)
-    if blob.get('format') != 'lcgpt-1':
-        raise SystemExit(f"{path}: not an lcgpt-1 model file")
-    cfg = blob['config']
-    sd = {name: [[Value(x) for x in row] for row in mat] for name, mat in blob['state_dict'].items()}
-    print(f"loaded model from {path}")
-    return cfg, blob['uchars'], sd
+def derive(config):
+    """Fill in the values implied by the rest of the config.
 
-if os.path.exists(args.model_path):
+    A config is a plain dict, so these cannot recompute themselves. Every function
+    that creates or alters `uchars`, `n_embd` or `n_head` calls this, which is what
+    keeps them from drifting out of sync with the weights.
+    """
+    config['head_dim'] = config['n_embd'] // config['n_head']    # derived dimension of each head
+    config['vocab_size'] = len(config['uchars']) + 1             # +1 is for BOS
+    config['BOS'] = len(config['uchars'])                        # id of the Beginning of Sequence token
+    return config
 
-    # Load path: the weights carry their own tokenizer and config, so no dataset is needed
-    cfg, uchars, state_dict = load_model(args.model_path)
-    n_layer, n_embd, block_size = cfg['n_layer'], cfg['n_embd'], cfg['block_size']
-    n_head, vocab_size = cfg['n_head'], cfg['vocab_size']
-    args.token_type = cfg.get('token_type', 'letter') # older files predate the flag
-    head_dim = n_embd // n_head
-    BOS = len(uchars)
-
-else:
-
-    # Let there be a Dataset `docs`: list[str] of documents (e.g. a list of names).
-    # The default corpus is fetched on first use; any other path must already exist,
-    # so a typo fails loudly instead of silently downloading names over the top of it.
-    if not os.path.exists(args.corpus_file):
-        if args.corpus_file != DEFAULT_CORPUS:
-            raise SystemExit(f"{args.corpus_file}: no such file")
-        import urllib.request
-        names_url = 'https://raw.githubusercontent.com/karpathy/makemore/988aa59/names.txt'
-        urllib.request.urlretrieve(names_url, DEFAULT_CORPUS)
-    docs = [line.strip() for line in open(args.corpus_file) if line.strip()]
-    random.shuffle(docs)
-    if args.num_docs is not None:
-        docs = docs[:args.num_docs]
-    print(f"corpus: {args.corpus_file}")
-    print(f"num docs: {len(docs)}")
+def new_config(docs, token_type='letter', verbose=True, **overrides):
+    """Build a tokenizer from `docs` and initialise a fresh set of weights."""
+    config = dict(CONFIG_DEFAULTS)
+    config.update(overrides)
+    config['token_type'] = token_type
 
     # Let there be a Tokenizer to translate strings to sequences of integers ("tokens") and back
-    uchars = sorted({t for d in docs for t in doc_to_tokens(d, args.token_type)}) # unique tokens become ids 0..n-1
-    BOS = len(uchars) # token id for a special Beginning of Sequence (BOS) token
-    vocab_size = len(uchars) + 1 # total number of unique tokens, +1 is for BOS
-    print(f"vocab size: {vocab_size} ({args.token_type} tokens)")
+    config['uchars'] = sorted({t for d in docs for t in doc_to_tokens(d, token_type)}) # unique tokens become ids 0..n-1
+    derive(config)
 
     # Initialize the parameters, to store the knowledge of the model
-    n_layer = 1     # depth of the transformer neural network (number of layers)
-    n_embd = 16     # width of the network (embedding dimension)
-    block_size = 16 # maximum context length of the attention window (note: the longest name is 15 characters)
-    n_head = 4      # number of attention heads
-    head_dim = n_embd // n_head # derived dimension of each head
+    n_embd, vocab_size, block_size = config['n_embd'], config['vocab_size'], config['block_size']
     matrix = lambda nout, nin, std=0.08: [[Value(random.gauss(0, std)) for _ in range(nin)] for _ in range(nout)]
     state_dict = {'wte': matrix(vocab_size, n_embd), 'wpe': matrix(block_size, n_embd), 'lm_head': matrix(vocab_size, n_embd)}
-    for i in range(n_layer):
+    for i in range(config['n_layer']):
         state_dict[f'layer{i}.attn_wq'] = matrix(n_embd, n_embd)
         state_dict[f'layer{i}.attn_wk'] = matrix(n_embd, n_embd)
         state_dict[f'layer{i}.attn_wv'] = matrix(n_embd, n_embd)
         state_dict[f'layer{i}.attn_wo'] = matrix(n_embd, n_embd)
         state_dict[f'layer{i}.mlp_fc1'] = matrix(4 * n_embd, n_embd)
         state_dict[f'layer{i}.mlp_fc2'] = matrix(n_embd, 4 * n_embd)
-    params = [p for mat in state_dict.values() for row in mat for p in row] # flatten params into a single list[Value]
-    print(f"num params: {len(params)}")
+    config['state_dict'] = state_dict
 
-    # Documents longer than the context window are silently cut short by the
-    # `n = min(block_size, ...)` below. Worth saying out loud on an unfamiliar corpus.
-    over = sum(1 for d in docs if len(doc_to_tokens(d, args.token_type)) + 1 > block_size)
-    if over:
-        print(f"note: {over} of {len(docs)} documents ({100 * over / len(docs):.0f}%) are longer than "
-              f"block_size={block_size} and will be truncated")
+    if verbose:
+        print(f"vocab size: {vocab_size} ({token_type} tokens)")
+        print(f"num params: {len(parameters(config))}")
+        # Documents longer than the context window are silently cut short by the
+        # `n = min(block_size, ...)` in train(). Worth saying out loud on an unfamiliar corpus.
+        over = sum(1 for d in docs if len(doc_to_tokens(d, token_type)) + 1 > block_size)
+        if over:
+            print(f"note: {over} of {len(docs)} documents ({100 * over / len(docs):.0f}%) are longer than "
+                  f"block_size={block_size} and will be truncated")
+    return config
+
+def parameters(config):
+    """Flatten the weights into a single list[Value], which is what Adam iterates over."""
+    return [p for mat in config['state_dict'].values() for row in mat for p in row]
+
+# ------------------------------------------------------------------------ corpora
+
+def load_corpus(path=DEFAULT_CORPUS, num_docs=None, shuffle=True, verbose=True):
+    """Read a corpus of one document per line.
+
+    The default corpus is fetched on first use; any other path must already exist,
+    so a typo fails loudly instead of silently downloading names over the top of it.
+    """
+    if not os.path.exists(path):
+        if path != DEFAULT_CORPUS:
+            raise SystemExit(f"{path}: no such file")
+        import urllib.request
+        urllib.request.urlretrieve(NAMES_URL, DEFAULT_CORPUS)
+
+    docs = [line.strip() for line in open(path) if line.strip()]
+    if shuffle:
+        random.shuffle(docs)
+    if num_docs is not None:
+        docs = docs[:num_docs]
+    if verbose:
+        print(f"corpus: {path}")
+        print(f"num docs: {len(docs)}")
+    return docs
+
+# ----------------------------------------------------------------------- training
+
+def train(config, docs, num_steps=1000, verbose=True, **hyper):
+    """Train `config` in place on `docs`, one document per step. Returns the config."""
+    settings = dict(TRAIN_DEFAULTS)
+    settings.update(hyper)
+    learning_rate = settings['learning_rate']
+    beta1, beta2, eps_adam = settings['beta1'], settings['beta2'], settings['eps_adam']
+
+    uchars, BOS = config['uchars'], config['BOS']
+    block_size, n_layer, token_type = config['block_size'], config['n_layer'], config['token_type']
 
     # Let there be Adam, the blessed optimizer and its buffers
-    learning_rate, beta1, beta2, eps_adam = 0.01, 0.85, 0.99, 1e-8
+    params = parameters(config)
     m = [0.0] * len(params) # first moment buffer
     v = [0.0] * len(params) # second moment buffer
 
     # Repeat in sequence
-    num_steps = args.num_steps # number of training steps
     for step in range(num_steps):
 
         # Take single document, tokenize it, surround it with BOS special token on both sides
         doc = docs[step % len(docs)]
-        tokens = [BOS] + [uchars.index(tok) for tok in doc_to_tokens(doc, args.token_type)] + [BOS]
+        tokens = [BOS] + [uchars.index(tok) for tok in doc_to_tokens(doc, token_type)] + [BOS]
         n = min(block_size, len(tokens) - 1)
 
         # Forward the token sequence through the model, building up the computation graph all the way to the loss
@@ -261,7 +285,7 @@ else:
         losses = []
         for pos_id in range(n):
             token_id, target_id = tokens[pos_id], tokens[pos_id + 1]
-            logits = gpt(token_id, pos_id, keys, values)
+            logits = gpt(config, token_id, pos_id, keys, values)
             probs = softmax(logits)
             loss_t = -probs[target_id].log()
             losses.append(loss_t)
@@ -280,23 +304,123 @@ else:
             p.data -= lr_t * m_hat / (v_hat ** 0.5 + eps_adam)
             p.grad = 0
 
-        print(f"step {step+1:4d} / {num_steps:4d} | loss {loss.data:.4f}", end='\r')
+        if verbose:
+            print(f"step {step+1:4d} / {num_steps:4d} | loss {loss.data:.4f}", end='\r')
 
-    print()
-    save_model(args.model_path)
+    if verbose:
+        print()
+    return config
 
-# Inference: may the model babble back to us
-temperature = 0.5 # in (0, 1], control the "creativity" of generated text, low to high
-print("--- inference (new, hallucinated names) ---")
-for sample_idx in range(20):
-    keys, values = [[] for _ in range(n_layer)], [[] for _ in range(n_layer)]
-    token_id = BOS
-    sample = []
-    for pos_id in range(block_size):
-        logits = gpt(token_id, pos_id, keys, values)
-        probs = softmax([l / temperature for l in logits])
-        token_id = random.choices(range(vocab_size), weights=[p.data for p in probs])[0]
-        if token_id == BOS:
-            break
-        sample.append(uchars[token_id])
-    print(f"sample {sample_idx+1:2d}: {tokens_to_text(sample, args.token_type)}")
+# ------------------------------------------------------------- saving and loading
+
+# The tokenizer travels with the weights: `uchars` is derived from whichever
+# documents were used for training, so a model trained on a subset (--num-docs) may
+# have a smaller vocabulary than one trained on everything, and the ids would not
+# line up if the tokenizer were rebuilt at load time.
+SAVED_KEYS = ('n_layer', 'n_embd', 'block_size', 'n_head', 'vocab_size', 'token_type')
+
+def save_model(path, config, verbose=True):
+    blob = {
+        'format': 'lcgpt-1',
+        'config': {k: config[k] for k in SAVED_KEYS},
+        'uchars': config['uchars'],
+        'state_dict': {name: [[p.data for p in row] for row in mat]
+                       for name, mat in config['state_dict'].items()},
+    }
+    with open(path, 'w') as f:
+        json.dump(blob, f)
+    if verbose:
+        print(f"saved model to {path}")
+    return path
+
+def load_model(path, verbose=True):
+    """Read a model file back into a config dict."""
+    with open(path) as f:
+        blob = json.load(f)
+    if blob.get('format') != 'lcgpt-1':
+        raise SystemExit(f"{path}: not an lcgpt-1 model file")
+
+    config = dict(CONFIG_DEFAULTS)
+    config.update(blob['config'])
+    config.setdefault('token_type', 'letter') # files written before the flag existed
+    config['uchars'] = blob['uchars']
+    config['state_dict'] = {name: [[Value(x) for x in row] for row in mat]
+                            for name, mat in blob['state_dict'].items()}
+    derive(config) # recompute rather than trust the file, so the two cannot disagree
+    if verbose:
+        print(f"loaded model from {path}")
+    return config
+
+# ---------------------------------------------------------------------- inference
+
+def generate(config, num_samples=20, temperature=0.5, verbose=True):
+    """Sample from the model. Returns a list of decoded strings.
+
+    `temperature` is in (0, 1] to control the "creativity" of generated text, low to high.
+    """
+    n_layer, block_size, vocab_size = config['n_layer'], config['block_size'], config['vocab_size']
+    uchars, BOS, token_type = config['uchars'], config['BOS'], config['token_type']
+
+    samples = []
+    for sample_idx in range(num_samples):
+        keys, values = [[] for _ in range(n_layer)], [[] for _ in range(n_layer)]
+        token_id = BOS
+        sample = []
+        for pos_id in range(block_size):
+            logits = gpt(config, token_id, pos_id, keys, values)
+            probs = softmax([l / temperature for l in logits])
+            token_id = random.choices(range(vocab_size), weights=[p.data for p in probs])[0]
+            if token_id == BOS:
+                break
+            sample.append(uchars[token_id])
+        text = tokens_to_text(sample, token_type)
+        samples.append(text)
+        if verbose:
+            print(f"sample {sample_idx+1:2d}: {text}")
+    return samples
+
+# ----------------------------------------------------------------- the whole path
+
+def get_model(model_path=DEFAULT_MODEL, corpus_file=DEFAULT_CORPUS, token_type='letter',
+              num_steps=1000, num_docs=None, verbose=True, **overrides):
+    """Load `model_path` if it exists, otherwise train on `corpus_file` and save there.
+
+    Pass model_path=None to train without saving.
+    """
+    if model_path and os.path.exists(model_path):
+        # The weights carry their own tokenizer and config, so no dataset is needed
+        return load_model(model_path, verbose=verbose)
+
+    docs = load_corpus(corpus_file, num_docs=num_docs, verbose=verbose)
+    if verbose:
+        print(f"training a new model on {corpus_file}")
+    config = new_config(docs, token_type=token_type, verbose=verbose, **overrides)
+    train(config, docs, num_steps=num_steps, verbose=verbose)
+    if model_path:
+        save_model(model_path, config, verbose=verbose)
+    return config
+
+def build_parser():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('--num-steps', '--training-runs', type=int, default=1000, dest='num_steps',
+                        help='number of training steps (default: 1000)')
+    parser.add_argument('--num-docs', type=int, default=None, dest='num_docs',
+                        help='use only the first N documents after shuffling (default: all)')
+    parser.add_argument('--corpus-file', type=str, default=DEFAULT_CORPUS, dest='corpus_file',
+                        help=f'training corpus, one document per line (default: {DEFAULT_CORPUS})')
+    parser.add_argument('--token-type', choices=('letter', 'word'), default='letter', dest='token_type',
+                        help='how documents are split into tokens (default: letter)')
+    parser.add_argument('--model', type=str, default=DEFAULT_MODEL, dest='model_path',
+                        help=f'model file; loaded if it exists, otherwise written after training (default: {DEFAULT_MODEL})')
+    return parser
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
+    config = get_model(model_path=args.model_path, corpus_file=args.corpus_file,
+                       token_type=args.token_type, num_steps=args.num_steps, num_docs=args.num_docs)
+    print("--- inference (new, hallucinated documents) ---")
+    generate(config)
+    return 0
+
+if __name__ == '__main__':
+    raise SystemExit(main())
