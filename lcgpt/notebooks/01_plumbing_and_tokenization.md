@@ -29,6 +29,10 @@ weight initialisation, shuffling and sampling. The seed is fixed, so every run
 produces identical numbers.
 
 ```{code-cell} ipython3
+
+```
+
+```{code-cell} ipython3
 """
 The most atomic way to train and run inference for a GPT in pure, dependency-free Python.
 This file is the complete algorithm.
