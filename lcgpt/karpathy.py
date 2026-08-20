@@ -1,8 +1,6 @@
-import os
-import json
 import math
 import random
-import argparse
+
 
 
 WORD_TRIM = '!"\'(),-.?—'
@@ -24,7 +22,7 @@ CONFIG_DEFAULTS = {
 
 def new_model_config(docs, token_type='letter', verbose=True, **overrides):
     """Build a tokenizer from `docs` and initialise a fresh set of weights."""
-    config = CONFIG_DEFAULTS
+    config = CONFIG_DEFAULTS.copy()
     config.update(overrides)
     config['token_type'] = token_type
 
@@ -50,7 +48,7 @@ def new_model_config(docs, token_type='letter', verbose=True, **overrides):
 
     if verbose:
         print(f"vocab size: {vocab_size} ({token_type} tokens)")
-        print(f"num params: {config['n_layer']} x  {config['n_embd']} x {config['n_embd']} ")
+        print(f"Dimensions: {config['n_layer']} x  {config['n_embd']} x {config['n_embd']} ")
         print(f"Num. Params: {len([p for mat in config['state_dict'].values() for row in mat for p in row])}")
         # Documents longer than the context window are silently cut short by the
         # `n = min(block_size, ...)` in train(). Worth saying out loud on an unfamiliar corpus.
@@ -232,11 +230,12 @@ def generate(config, num_samples=20, temperature=0.5, verbose=True, seed=None):
 
     `temperature` is in (0, 1] to control the "creativity" of generated text, low to high.
     """
-    seed = seed or 42
+    seed = 42 if seed is None else seed
     random.seed(seed)
     n_layer, block_size, vocab_size = config['n_layer'], config['block_size'], config['vocab_size']
     uchars, BOS, token_type = config['uchars'], config['BOS'], config['token_type']
-    print(f"Generating {num_samples} samples at T={temperature} with seed {seed}")
+    if verbose:
+        print(f"Generating {num_samples} samples at T={temperature} with seed {seed}")
     samples = []
     for sample_idx in range(num_samples):
         keys, values = [[] for _ in range(n_layer)], [[] for _ in range(n_layer)]

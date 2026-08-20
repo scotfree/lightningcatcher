@@ -14,30 +14,20 @@ As a script it behaves exactly as before:
     --model PATH     load a saved model and sample from it; if PATH does not
                      exist, train and save there instead
 
-    python karpathy_gpt_cli.py --num-steps 200 --num-docs 5000
-    python karpathy_gpt_cli.py --corpus-file data/beatles_first3.txt --token-type word
-    python karpathy_gpt_cli.py --model model.json
+    python lcgpt.py --num-steps 200 --num-docs 5000
+    python lcgpt_cli.py --corpus-file data/beatles_first3.txt --token-type word
+    python lcgpt_cli.py --model model.json
 
 As a library, a "config" is a plain dict carrying the hyperparameters, the
 tokenizer and the weights together -- they are meaningless apart, since token ids
 only mean anything relative to the `uchars` they were trained against:
-
-    import karpathy_gpt_cli as lc
-
-    config = lc.get_model('beatles_word1.json')     # loads, or trains and saves
-    lc.generate(config, num_samples=5)
-
-    docs   = lc.load_corpus('data/beatles_first3.txt', num_docs=500)
-    config = lc.new_config(docs, token_type='word')
-    lc.train(config, docs, num_steps=200)
-    lc.save_model('mine.json', config)
 
 Still dependency-free: argparse and json are standard library.
 """
 
 import os
 import json
-import math
+
 import random
 import argparse
 
@@ -48,22 +38,10 @@ import karpathy
 # random.seed(42) # Let there be order among chaos. Note: this runs at import time.
 
 
-def derive(config):
-    """Fill in the values implied by the rest of the config.
-
-    A config is a plain dict, so these cannot recompute themselves. Every function
-    that creates or alters `uchars`, `n_embd` or `n_head` calls this, which is what
-    keeps them from drifting out of sync with the weights.
-    """
-    
-    return config
-
-
-
-def load_docs_textfile(path, num_docs=None, shuffle=True, verbose=True):
+def load_docs_textfile(path, num_docs=None, shuffle=True, verbose=True, seed=None):
     """Read a corpus of one document per line.
 
-    The default corpus is fetched on first use; any other path must already exist,
+    The  path must already exist,
     so a typo fails loudly instead of silently downloading names over the top of it.
     """
     if not os.path.exists(path):
@@ -71,6 +49,7 @@ def load_docs_textfile(path, num_docs=None, shuffle=True, verbose=True):
 
     docs = [line.strip() for line in open(path) if line.strip()]
     if shuffle:
+        random.seed(seed)
         random.shuffle(docs)
     if num_docs is not None:
         docs = docs[:num_docs]
@@ -81,7 +60,7 @@ def load_docs_textfile(path, num_docs=None, shuffle=True, verbose=True):
 
 
 
-SAVED_KEYS = ('n_layer', 'n_embd', 'block_size', 'n_head', 'vocab_size', 'token_type', 'BOS', 'head_dim', 'vocab_size')
+SAVED_KEYS = ('n_layer', 'n_embd', 'block_size', 'n_head', 'vocab_size', 'token_type', 'BOS', 'head_dim')
 
 def save_model(path, config, verbose=True):
     blob = {
@@ -104,13 +83,13 @@ def load_model(path, verbose=True):
     if blob.get('format') != 'lcgpt-1':
         raise SystemExit(f"{path}: not an lcgpt-1 model file")
 
-    config = karpathy.CONFIG_DEFAULTS
+    config = karpathy.CONFIG_DEFAULTS.copy()
     config.update(blob['config'])
     config.setdefault('token_type', 'letter') # files written before the flag existed
     config['uchars'] = blob['uchars']
     config['state_dict'] = {name: [[karpathy.Value(x) for x in row] for row in mat]
                             for name, mat in blob['state_dict'].items()}
-    derive(config) # recompute rather than trust the file, so the two cannot disagree
+    # derive(config) # recompute rather than trust the file, so the two cannot disagree
     if verbose:
         print(f"loaded model from {path}")
     return config
@@ -144,7 +123,7 @@ def main(argv=None, verbose=True):
     else:
         if verbose:
             print(f"training a new model on {args.corpus_file}")
-        docs = load_docs_textfile(args.corpus_file, num_docs=args.num_docs, shuffle=True, verbose=verbose)
+        docs = load_docs_textfile(args.corpus_file, num_docs=args.num_docs, shuffle=True, verbose=verbose, seed=args.seed)
         config = karpathy.new_model_config(docs, token_type=args.token_type)
         #model = get_model(config, model_path=args.model_path, corpus_file=args.corpus_file,
         #                       token_type=args.token_type, num_steps=args.num_steps, num_docs=args.num_docs)
