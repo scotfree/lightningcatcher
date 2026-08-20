@@ -309,3 +309,63 @@ $$
 logits = linear(x, state_dict['lm_head'])
 return logits
 ```
+
+## 3.11 A model small enough to read
+
+Not from the source. Every section above described a matrix and asked you to
+accept that these matrices *are* the model's knowledge. At the default size that
+is an assertion — 4,192 numbers is not something you can look at. So shrink the
+model until it is.
+
+`new_model_config` takes architecture overrides, so `n_embd=2, n_head=1,
+block_size=4` over a three-letter alphabet gives a model of **72 parameters**,
+every one of which fits on screen. `seed=` fixes the initialisation, so the numbers
+below stay put when the cell is re-run.
+
+The corpus is four documents, deliberately lopsided: `aba` three times and `abc`
+once. So after the prefix `ab`, the corpus says `a` three times in four and `c`
+once. If the weights really do encode the corpus, the model's predicted
+distribution should be exactly that:
+
+$$
+P_\theta(t \mid \texttt{ab}) \;=\; \hat{P}_{\text{corpus}}(t \mid \texttt{ab})
+\;=\; \left(\tfrac{3}{4},\, 0,\, \tfrac{1}{4},\, 0\right)
+$$
+
+Nothing forces this. It is what training *for*.
+
+```{code-cell} ipython3
+# Not from the source: the whole model, small enough to print.
+import sys; sys.path.insert(0, '..')   # karpathy.py lives one level up
+import karpathy
+
+docs = ['aba', 'aba', 'aba', 'abc']    # after "ab": 'a' 3 times in 4, 'c' once
+config = karpathy.new_model_config(docs, verbose=False, seed=42,
+                                   n_embd=2, n_head=1, block_size=4)
+names = config['uchars'] + ['BOS']
+
+def next_token_probs(config, prefix):
+    """Run the model over `prefix` and return its distribution over what comes next."""
+    keys, values = [[] for _ in range(config['n_layer'])], [[] for _ in range(config['n_layer'])]
+    ids = [config['BOS']] + [config['uchars'].index(c) for c in prefix]
+    for pos_id, token_id in enumerate(ids):
+        logits = karpathy.gpt(config, token_id, pos_id, keys, values)
+    return [p.data for p in karpathy.softmax(logits)]
+
+show = lambda d: "  ".join(f"{n}={v:.2f}" for n, v in zip(names, d))
+
+total = sum(len(row) for mat in config['state_dict'].values() for row in mat)
+print(f"{total} parameters, vocabulary {config['vocab_size']}\n")
+print("before training, after 'ab':", show(next_token_probs(config, 'ab')))
+
+karpathy.train(config, docs, num_steps=3000, verbose=False)
+
+print("after  training, after 'ab':", show(next_token_probs(config, 'ab')))
+print("the corpus itself          :", show([0.75, 0.0, 0.25, 0.0]))
+
+print("\nevery weight in the model:")
+for name, mat in config['state_dict'].items():
+    print(f"\n{name}")
+    for row in mat:
+        print("   ", "  ".join(f"{p.data:+.4f}" for p in row))
+```

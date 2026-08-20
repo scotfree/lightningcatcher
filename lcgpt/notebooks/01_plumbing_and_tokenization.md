@@ -165,6 +165,8 @@ how cheap it was.
 
 ```{code-cell} ipython3
 # Not from the source: an n-gram counter and sampler, in the spirit of Shannon (1948).
+import sys; sys.path.insert(0, '..')   # karpathy.py and lcgpt.py live one level up
+
 import random
 from collections import Counter, defaultdict
 

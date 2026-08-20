@@ -256,6 +256,7 @@ document.
 
 ```{code-cell} ipython3
 # Not from the source: minimise f(x) = (x - 3)^2, whose minimum is obviously at x = 3.
+import sys; sys.path.insert(0, '..')   # karpathy.py lives one level up
 from karpathy import Value
 
 x = Value(-2.0)
