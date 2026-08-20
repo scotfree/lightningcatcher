@@ -124,7 +124,7 @@ def main(argv=None, verbose=True):
         if verbose:
             print(f"training a new model on {args.corpus_file}")
         docs = load_docs_textfile(args.corpus_file, num_docs=args.num_docs, shuffle=True, verbose=verbose, seed=args.seed)
-        config = karpathy.new_model_config(docs, token_type=args.token_type)
+        config = karpathy.new_model_config(docs, token_type=args.token_type, seed=args.seed)
         #model = get_model(config, model_path=args.model_path, corpus_file=args.corpus_file,
         #                       token_type=args.token_type, num_steps=args.num_steps, num_docs=args.num_docs)
         model = karpathy.train(config, docs, num_steps=args.num_steps, verbose=verbose)
