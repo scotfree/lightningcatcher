@@ -12,22 +12,22 @@ kernelspec:
 
 # 02 — Derivatives, computation graphs & gradient descent
 
-Covers `karpathy_gpt.py` lines 28–71 (the `Value` autograd class) and 145–148
-plus 173–181 (Adam). This is the calculus at the centre of the file: everything
-else is arithmetic arranged so that these forty-odd lines can differentiate it.
+Covers `karpathy.py` lines 71–113 (the `Value` autograd class) and 184–187 plus
+211–219 (Adam). This is the calculus at the centre of the file: everything else is
+arithmetic arranged so that these forty-odd lines can differentiate it.
 
 Code cells reproduce the source verbatim, dedented where a fragment sits inside a
 function or a loop.
 
 +++
 
-## 2.1 The `Value` node — lines 28–36
+## 2.1 The `Value` node — lines 71–79
 
-A `Value` is one scalar in a computation graph. It stores its own number
-(`data`), a slot for the derivative of the final loss with respect to it
-(`grad`), the nodes it was computed from (`_children`), and — the key design
-choice — the local derivative of itself with respect to each of those children
-(`_local_grads`), recorded at the moment the operation happens.
+A `Value` is one scalar in a computation graph. It stores its own number (`data`),
+a slot for the derivative of the final loss with respect to it (`grad`), the nodes
+it was computed from (`_children`), and — the key design choice — the local
+derivative of itself with respect to each of those children (`_local_grads`),
+recorded at the moment the operation happens.
 
 Nothing here knows what a loss is. Each node only knows its immediate neighbours.
 
@@ -53,12 +53,11 @@ class Value:
         self._local_grads = local_grads # local derivative of this node w.r.t. its children
 ```
 
-## 2.2 Binary operations — lines 38–44
+## 2.2 Binary operations — lines 81–87
 
-Addition and multiplication each build a new node with two children, and record
-the two partial derivatives alongside them. That is the whole trick: the
-derivative rule is captured during the forward pass, while the operands are still
-in hand.
+Addition and multiplication each build a new node with two children, and record the
+two partial derivatives alongside them. That is the whole trick: the derivative
+rule is captured during the forward pass, while the operands are still in hand.
 
 $$
 c = a + b \;\Longrightarrow\;
@@ -88,7 +87,7 @@ def __mul__(self, other):
     return Value(self.data * other.data, (self, other), (other.data, self.data))
 ```
 
-## 2.3 Unary operations — lines 46–49
+## 2.3 Unary operations — lines 89–92
 
 Four single-child nodes, each a one-liner pairing a value with its derivative.
 
@@ -109,17 +108,17 @@ def exp(self): return Value(math.exp(self.data), (self,), (math.exp(self.data),)
 def relu(self): return Value(max(0, self.data), (self,), (float(self.data > 0),))
 ```
 
-## 2.4 Operators derived from the primitives — lines 50–56
+## 2.4 Operators derived from the primitives — lines 93–99
 
-None of these record a derivative, because none of them are new operations —
-each is rewritten in terms of `__add__`, `__mul__` and `__pow__`, which already
-know their own rules. Negation is multiplication by $-1$; subtraction is addition
-of a negation; division is multiplication by a $-1$ power.
+None of these record a derivative, because none of them are new operations — each
+is rewritten in terms of `__add__`, `__mul__` and `__pow__`, which already know
+their own rules. Negation is multiplication by $-1$; subtraction is addition of a
+negation; division is multiplication by a $-1$ power.
 
-The reflected forms (`__radd__`, `__rmul__`, `__rsub__`, `__rtruediv__`) exist so
-a plain Python number can appear on the left. `__radd__` in particular is
-load-bearing: `sum()` starts its accumulation at the integer `0`, so every
-`sum(...)` over `Value` objects elsewhere in the file goes through it.
+The reflected forms exist so a plain Python number can appear on the left.
+`__radd__` in particular is load-bearing: `sum()` starts its accumulation at the
+integer `0`, so every `sum(...)` over `Value` objects elsewhere in the file goes
+through it.
 
 ```{code-cell} ipython3
 def __neg__(self): return self * -1
@@ -131,7 +130,7 @@ def __truediv__(self, other): return self * other**-1
 def __rtruediv__(self, other): return other * self**-1
 ```
 
-## 2.5 `backward()` — lines 58–71
+## 2.5 `backward()` — lines 101–114
 
 The graph was built forward, one operation at a time, and each node already knows
 its local derivatives. Turning that into $\partial L / \partial \theta$ for every
@@ -144,14 +143,14 @@ $$
 \qquad \text{for each child } c \text{ of } v
 $$
 
-Two details carry the weight. The accumulation is `+=`, not `=`, because a node
-can feed several parents and every path contributes. And the topological order is
-what guarantees that when the loop reaches a node, every parent has already
-deposited its share, so `v.grad` is final before it is used.
+Two details carry the weight. The accumulation is `+=`, not `=`, because a node can
+feed several parents and every path contributes. And the topological order is what
+guarantees that when the loop reaches a node, every parent has already deposited
+its share, so `v.grad` is final before it is used.
 
 The seed is `self.grad = 1`: the derivative of the loss with respect to itself.
 
-> Called once per training step at line 171 — notebook 05, §5.6.
+> Called once per training step at line 209 — notebook 05, §5.6.
 
 ```mermaid
 flowchart BT
@@ -185,7 +184,7 @@ def backward(self):
             child.grad += local_grad * v.grad
 ```
 
-## 2.6 Adam's buffers — lines 145–148
+## 2.6 Adam's buffers — lines 184–187
 
 Gradient descent in its plainest form steps along $-\nabla L$. Adam keeps two
 running averages per parameter instead: `m`, an exponentially decayed mean of the
@@ -196,21 +195,26 @@ m_t = \beta_1 m_{t-1} + (1 - \beta_1)\, g_t, \qquad
 v_t = \beta_2 v_{t-1} + (1 - \beta_2)\, g_t^{2}
 $$
 
-These are plain Python floats, not `Value` objects — the optimiser sits outside
-the computation graph and must not be differentiated.
+`params` flattens every weight matrix into one list, which is what the optimiser
+iterates over — the same `Value` objects the model reads, so updating them here
+updates the model. The buffers themselves are plain floats, not `Value`s: the
+optimiser sits outside the computation graph and must not be differentiated.
+
+$\beta_1$, $\beta_2$ and $\epsilon$ come from `CONFIG_DEFAULTS` (§3.1 of notebook
+03), which is also where the learning rate lives.
 
 ```{code-cell} ipython3
 # Let there be Adam, the blessed optimizer and its buffers
-learning_rate, beta1, beta2, eps_adam = 0.01, 0.85, 0.99, 1e-8
+params = [p for mat in config['state_dict'].values() for row in mat for p in row]
 m = [0.0] * len(params) # first moment buffer
 v = [0.0] * len(params) # second moment buffer
 ```
 
-## 2.7 The Adam update — lines 173–181
+## 2.7 The Adam update — lines 211–219
 
 Both buffers start at zero, which biases them toward zero for the first several
-steps. Dividing by $1 - \beta^{t}$ corrects for exactly that, and matters most
-when $t$ is small:
+steps. Dividing by $1 - \beta^{t}$ corrects for exactly that, and matters most when
+$t$ is small:
 
 $$
 \hat{m}_t = \frac{m_t}{1 - \beta_1^{\,t}}, \qquad
@@ -245,13 +249,15 @@ for i, p in enumerate(params):
 
 ## 2.8 Gradient descent, on its own
 
-Not from the source. The smallest thing that exercises everything above: a
-scalar function with a known minimum, descended by hand. The graph is rebuilt
-from scratch each step, exactly as the training loop rebuilds the model's graph
-for every document.
+Not from the source. The smallest thing that exercises everything above: a scalar
+function with a known minimum, descended by hand. The graph is rebuilt from scratch
+each step, exactly as the training loop rebuilds the model's graph for every
+document.
 
 ```{code-cell} ipython3
 # Not from the source: minimise f(x) = (x - 3)^2, whose minimum is obviously at x = 3.
+from karpathy import Value
+
 x = Value(-2.0)
 lr = 0.1
 

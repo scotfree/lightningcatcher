@@ -59,15 +59,15 @@ A full 1000-step run takes roughly 63 seconds on system Python 3.9 — about
 inference samples at the end. Runtime scales with step count only; the number
 of documents makes no measurable difference.
 
-## karpathy_gpt_cli.py
+## lcgpt.py
 
 The same algorithm with a command line and an importable API, for when you want
 to run it rather than read it. `karpathy_gpt.py` itself is never edited — the notebooks quote it by
 line number — so the conveniences live in a separate file.
 
 ```sh
-.venv/bin/python karpathy_gpt_cli.py --num-steps 200 --num-docs 5000
-.venv/bin/python karpathy_gpt_cli.py --model model.json
+.venv/bin/python lcgpt.py --num-steps 200 --num-docs 5000
+.venv/bin/python lcgpt.py --model model.json
 ```
 
 | flag | meaning |
@@ -107,7 +107,7 @@ relative to the `uchars` they were trained against. `derive()` recomputes
 config, so they cannot drift.
 
 ```python
-import karpathy_gpt_cli as lc
+import lcgpt, karpathy
 
 config = lc.get_model('beatles_word1.json')   # loads, or trains and saves
 lc.generate(config, num_samples=5)

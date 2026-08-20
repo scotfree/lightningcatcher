@@ -4,7 +4,6 @@ jupytext:
     extension: .md
     format_name: myst
     format_version: 0.13
-    jupytext_version: 1.19.5
 kernelspec:
   display_name: LightningcatcherGPT
   language: python
@@ -13,63 +12,85 @@ kernelspec:
 
 # 05 — Loss & training
 
-Covers `karpathy_gpt.py` lines 150–199: the training loop and inference. This is
-where the pieces from notebooks 01–04 are assembled into something that learns.
+Covers `karpathy.py` lines 174–255: `train` and `generate`. This is where the
+pieces from notebooks 01–04 are assembled into something that learns, and then
+babbles.
 
 Several sections here re-show code that was the subject of an earlier notebook.
-That is deliberate — the point of this notebook is the assembly, and each cell
-says where the piece was first taken apart.
+That is deliberate — the point of this notebook is the assembly, and each cell says
+where the piece was first taken apart.
 
 Code cells reproduce the source verbatim, dedented where a fragment sits inside a
 function or a loop.
 
 +++
 
-## 5.1 The loop — lines 150–152
+## 5.1 What training needs — lines 174–182
 
-One thousand steps, one document per step. Note what is absent: no batching, no
-epochs, no validation split, no checkpointing, no early stopping. At 32,032
-names and one per step, training sees about 3% of the corpus and never revisits
-a name.
+`train` mutates the config in place and returns it. Everything it needs is already
+in there: the weights to update, the tokenizer to encode with, and Adam's knobs.
+`**hyper` lets a caller override the learning rate or betas for one run.
+
+Note what it does *not* take: no validation set, no batch size, no schedule beyond
+the linear decay in §5.7.
+
+```{code-cell} ipython3
+def train(config, docs, num_steps=1000, verbose=True, **hyper):
+    """Train `config` in place on `docs`, one document per step. Returns the config."""
+    #settings = dict(TRAIN_DEFAULTS)
+    config.update(hyper)
+    learning_rate = config['learning_rate']
+    beta1, beta2, eps_adam = config['beta1'], config['beta2'], config['eps_adam']
+
+    uchars, BOS = config['uchars'], config['BOS']
+    block_size, n_layer, token_type = config['block_size'], config['n_layer'], config['token_type']
+```
+
+## 5.2 The loop — lines 189–190
+
+One document per step. With `num_steps=1000` against 32,032 names, training sees
+about 3% of the corpus and never revisits a name. No batching, no epochs, no early
+stopping.
 
 ```{code-cell} ipython3
 # Repeat in sequence
-num_steps = 1000 # number of training steps
 for step in range(num_steps):
 ```
 
-## 5.2 One document, tokenized — lines 154–157
+## 5.3 One document, tokenized — lines 192–195
 
-`docs` was shuffled at load time (§1.2), so walking it in order is already a
-random order. The document is wrapped in BOS at both ends: the leading one gives
-position 0 something to condition on, and the trailing one is the target that
-teaches the model to stop.
+`docs` was shuffled when it was loaded, so walking it in order is already a random
+order. The document is wrapped in BOS at both ends: the leading one gives position
+0 something to condition on, and the trailing one is the target that teaches the
+model to stop.
 
 $$
 n = \min(\texttt{block\_size},\; |\text{tokens}| - 1)
 $$
 
-The $-1$ is because the last token is only ever a target, never an input.
+The $-1$ is because the last token is only ever a target, never an input. When a
+document is longer than `block_size` this is also where it gets silently
+truncated — the warning in §3.4 exists because of this line.
 
-> The encoder on line 156 is §1.5 of notebook 01, where it is examined on its own.
+> The encoder on line 194 is §1.6 of notebook 01, where it is examined on its own.
 
 ```{code-cell} ipython3
 # Take single document, tokenize it, surround it with BOS special token on both sides
 doc = docs[step % len(docs)]
-tokens = [BOS] + [uchars.index(ch) for ch in doc] + [BOS]
+tokens = [BOS] + [uchars.index(tok) for tok in doc_to_tokens(doc, token_type)] + [BOS]
 n = min(block_size, len(tokens) - 1)
 ```
 
-## 5.3 The forward pass — lines 159–164
+## 5.4 The forward pass — lines 197–202
 
 A fresh KV cache per document — the model must not attend across documents. Then
-one `gpt` call per position, each appending to the cache and each returning
-logits for what should come next.
+one `gpt` call per position, each appending to the cache and each returning logits
+for what should come next.
 
 Every position is a training example: `emma` supplies five of them at once
-(`BOS`→`e`, `e`→`m`, `m`→`m`, `m`→`a`, `a`→`BOS`). This is why language models
-are so sample-efficient per document, and why no explicit labels are needed —
-the text is its own supervision.
+(`BOS`→`e`, `e`→`m`, `m`→`m`, `m`→`a`, `a`→`BOS`). This is why language models are
+so sample-efficient per document, and why no explicit labels are needed — the text
+is its own supervision.
 
 ```mermaid
 flowchart LR
@@ -86,61 +107,50 @@ keys, values = [[] for _ in range(n_layer)], [[] for _ in range(n_layer)]
 losses = []
 for pos_id in range(n):
     token_id, target_id = tokens[pos_id], tokens[pos_id + 1]
-    logits = gpt(token_id, pos_id, keys, values)
+    logits = gpt(config, token_id, pos_id, keys, values)
 ```
 
-## 5.4 Cross-entropy — lines 165–167
+## 5.5 Cross-entropy — lines 203–206
 
 The logits become a distribution, and the loss is the negative log of the
-probability assigned to the token that actually came next:
+probability assigned to the token that actually came next, averaged over the
+document:
 
 $$
 p = \mathrm{softmax}(\text{logits}), \qquad
-\ell_t = -\log p_{\,y_t}
+\ell_t = -\log p_{\,y_t}, \qquad
+L = \frac{1}{n} \sum_{t=0}^{n-1} \ell_t
 $$
 
-Nothing else in the distribution appears in the formula. The other 26
-probabilities are punished only indirectly, through the denominator inside the
-softmax — pushing them down is the only way to push $p_{y_t}$ up.
+Nothing else in the distribution appears in the formula. The other probabilities
+are punished only indirectly, through the denominator inside the softmax — pushing
+them down is the only way to push $p_{y_t}$ up.
+
+Averaging rather than summing means a long document and a short one contribute
+comparably, instead of long ones dominating by having more positions.
 
 A useful reference point: an untrained model spreads its mass evenly, giving
-$-\log(1/27) \approx 3.30$. That is very close to the loss at step 1, and the
-number to measure progress against.
+$-\log(1/27) \approx 3.30$ on the names corpus. That is very close to the loss at
+step 1, and the number to measure progress against.
 
 > `softmax` itself is §4.1 of notebook 04.
 
 ```{code-cell} ipython3
-probs = softmax(logits)
-loss_t = -probs[target_id].log()
-losses.append(loss_t)
-```
-
-## 5.5 Averaging over the document — line 168
-
-$$
-L = \frac{1}{n} \sum_{t=0}^{n-1} \ell_t
-$$
-
-Averaging rather than summing means a long name and a short name contribute
-comparably, instead of long names dominating simply by having more positions.
-
-This single `Value` is the root of a computation graph containing every operation
-performed on this document — some tens of thousands of nodes.
-
-```{code-cell} ipython3
+    probs = softmax(logits)
+    loss_t = -probs[target_id].log()
+    losses.append(loss_t)
 loss = (1 / n) * sum(losses) # final average loss over the document sequence. May yours be low.
 ```
 
-## 5.6 Backward — lines 170–171
+## 5.6 Backward — lines 208–209
 
 One call. It walks the graph built by the forward pass and leaves
-$\partial L / \partial p$ in `p.grad` for all 4192 parameters.
+$\partial L / \partial p$ in `p.grad` for every parameter.
 
-Worth pausing on the asymmetry: the forward pass took twenty lines of model code
-to write, and the backward pass took none. Nobody derived a gradient for
-attention, or for RMSNorm, or for the residual connections. Each operation
-recorded its own local derivative as it happened, and the chain rule assembled
-them.
+Worth pausing on the asymmetry: the forward pass took forty lines of model code to
+write, and the backward pass took none. Nobody derived a gradient for attention, or
+for RMSNorm, or for the residual connections. Each operation recorded its own local
+derivative as it happened, and the chain rule assembled them.
 
 > `backward()` is §2.5 of notebook 02.
 
@@ -149,10 +159,9 @@ them.
 loss.backward()
 ```
 
-## 5.7 The optimiser step — lines 173–181
+## 5.7 The optimiser step — lines 211–219
 
-The gradients from §5.6 are consumed here and cleared, ready for the next
-document.
+The gradients from §5.6 are consumed here and cleared, ready for the next document.
 
 > Adam is §2.6 and §2.7 of notebook 02, where the update rule and its bias
 > correction are worked through. This cell is the same code in its place.
@@ -169,22 +178,27 @@ for i, p in enumerate(params):
     p.grad = 0
 ```
 
-## 5.8 Watching it train — line 183
+## 5.8 Watching it train — lines 221–226
 
 The `end='\r'` overwrites the line, so a thousand steps scroll in place.
 
 What the number does is worth knowing in advance. It is the loss on a *single
 document*, so it is extremely noisy — consecutive steps swing between roughly 1.7
-and 3.8 for the whole run, because some names are far more predictable than
-others. The trend is real but only visible smoothed: averaged in blocks of 100,
-it falls from about 2.77 to about 2.28 over the run. Plotting the raw per-step
-value produces something that looks like noise and is.
+and 3.8, because some names are far more predictable than others. The trend is real
+but only visible smoothed: averaged in blocks of 100, it falls from about 2.77 to
+about 2.28 over a 1000-step run. Plotting the raw per-step value produces something
+that looks like noise and is.
 
 ```{code-cell} ipython3
-print(f"step {step+1:4d} / {num_steps:4d} | loss {loss.data:.4f}", end='\r')
+    if verbose:
+        print(f"step {step+1:4d} / {num_steps:4d} | loss {loss.data:.4f}", end='\r')
+
+if verbose:
+    print()
+return config
 ```
 
-## 5.9 Inference — lines 185–187
+## 5.9 Inference — lines 228–238
 
 Temperature rescales the logits before the softmax:
 
@@ -192,19 +206,30 @@ $$
 p_i \;\propto\; \exp\!\left(\frac{z_i}{T}\right)
 $$
 
-As $T \to 0$ the distribution concentrates on the single highest logit and
-sampling becomes deterministic; at $T = 1$ it is the model's distribution
-unmodified; above 1 it flattens toward uniform. At $T = 0.5$ the model is held
-fairly close to its confident predictions — names that look typical rather than
-inventive.
+As $T \to 0$ the distribution concentrates on the single highest logit and sampling
+becomes deterministic; at $T = 1$ it is the model's distribution unmodified; above
+1 it flattens toward uniform.
+
+The seed defaults to 42 rather than to "leave the RNG alone", so sampling is
+reproducible by default. Worth knowing that this reseeds the *global* RNG, so
+anything built afterwards that draws on it will land differently than it would
+have.
 
 ```{code-cell} ipython3
-# Inference: may the model babble back to us
-temperature = 0.5 # in (0, 1], control the "creativity" of generated text, low to high
-print("\n--- inference (new, hallucinated names) ---")
+def generate(config, num_samples=20, temperature=0.5, verbose=True, seed=None):
+    """Sample from the model. Returns a list of decoded strings.
+
+    `temperature` is in (0, 1] to control the "creativity" of generated text, low to high.
+    """
+    seed = 42 if seed is None else seed
+    random.seed(seed)
+    n_layer, block_size, vocab_size = config['n_layer'], config['block_size'], config['vocab_size']
+    uchars, BOS, token_type = config['uchars'], config['BOS'], config['token_type']
+    if verbose:
+        print(f"Generating {num_samples} samples at T={temperature} with seed {seed}")
 ```
 
-## 5.10 Sampling — lines 188–199
+## 5.10 Sampling — lines 239–255
 
 The loop that makes the whole thing a generative model. Start from BOS with an
 empty cache, sample a token from the model's distribution, feed it back in as the
@@ -215,7 +240,11 @@ distribution — the model conditions on what it actually committed to. And note
 `p.data`: sampling steps outside the computation graph entirely, because at
 inference there is nothing to differentiate.
 
-> The decode on line 198 is §1.6 of notebook 01.
+An early-training model often emits BOS immediately, which breaks the loop with
+nothing collected and returns an empty string. Blanks in the output are the model
+choosing to stop, not a bug.
+
+> The decode on line 250 is §1.7 of notebook 01.
 
 ```mermaid
 flowchart LR
@@ -228,16 +257,21 @@ flowchart LR
 ```
 
 ```{code-cell} ipython3
-for sample_idx in range(20):
+samples = []
+for sample_idx in range(num_samples):
     keys, values = [[] for _ in range(n_layer)], [[] for _ in range(n_layer)]
     token_id = BOS
     sample = []
     for pos_id in range(block_size):
-        logits = gpt(token_id, pos_id, keys, values)
+        logits = gpt(config, token_id, pos_id, keys, values)
         probs = softmax([l / temperature for l in logits])
         token_id = random.choices(range(vocab_size), weights=[p.data for p in probs])[0]
         if token_id == BOS:
             break
         sample.append(uchars[token_id])
-    print(f"sample {sample_idx+1:2d}: {''.join(sample)}")
+    text = tokens_to_text(sample, token_type)
+    samples.append(text)
+    if verbose:
+        print(f"sample {sample_idx+1:2d}: {text}")
+return samples
 ```

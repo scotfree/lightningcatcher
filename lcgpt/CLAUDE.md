@@ -10,8 +10,12 @@ Franklin reference. The format it belongs to is **"Lightning Catcher"** (design
 doc §1). Earlier drafts said "Lightning Capture" — voice-mode mis-transcription,
 corrected 2026-08-18. Don't reintroduce it.
 
-**Never modify `karpathy_gpt.py`.** It is the fixed reference artifact the whole
-project is anchored to. Notebooks explain it; they don't edit it.
+**The notebooks are anchored to `karpathy.py`**, quoted by line number and
+verified byte-for-byte. Changing that file shifts every line reference, so re-run
+the regeneration rather than hand-patching the notebooks.
+
+**`karpathy_gpt.py` is Karpathy's original, kept unmodified** as the historical
+reference. Nothing quotes it any more, but it is what `karpathy.py` descends from.
 
 **Prose is the author's.** Claude supplies runnable code, real LaTeX for the core
 math, and skeletons. Any prose Claude writes is minimal and strictly technical —
@@ -44,7 +48,11 @@ describing what a specific cell does, nothing more. No narrative voice.
   is the authority. `data/beatles_first3.txt` is gitignored and regenerated locally
   via `get_lcgpt_corpus.py`. It was committed and pushed public once, on
   2026-08-18, and removed by a full history rewrite the same day.
-- **CLI conveniences live in `karpathy_gpt_cli.py`, not in the anchor.** Argparse
+- **The code is split: `karpathy.py` is the algorithm, `lcgpt.py` is everything
+  else** (corpus files, save/load, argparse). The notebooks discuss `karpathy.py`
+  only. Corpus plumbing therefore dropped out of notebook 01, which is now
+  tokenization alone. (Decided 2026-08-20.)
+- **Historical: CLI conveniences lived in `karpathy_gpt_cli.py`, not in the anchor.** Argparse
   and checkpointing would shift every line number in `karpathy_gpt.py`, breaking
   56 line references and 35 verbatim code cells across the notebooks. The CLI
   file duplicates the algorithm verbatim and adds `--num-steps`, `--num-docs`
