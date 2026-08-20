@@ -173,14 +173,16 @@ def train(config, docs, num_steps=1000, verbose=True, **hyper):
         print()
     return config
 
-def generate(config, num_samples=20, temperature=0.5, verbose=True):
+def generate(config, num_samples=20, temperature=0.5, verbose=True, seed=None):
     """Sample from the model. Returns a list of decoded strings.
 
     `temperature` is in (0, 1] to control the "creativity" of generated text, low to high.
     """
+    seed = seed or 42
+    random.seed(seed)
     n_layer, block_size, vocab_size = config['n_layer'], config['block_size'], config['vocab_size']
     uchars, BOS, token_type = config['uchars'], config['BOS'], config['token_type']
-
+    print(f"Generating {num_samples} samples at T={temperature} with seed {seed}")
     samples = []
     for sample_idx in range(num_samples):
         keys, values = [[] for _ in range(n_layer)], [[] for _ in range(n_layer)]

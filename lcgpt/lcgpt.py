@@ -186,11 +186,15 @@ def build_parser():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--num-steps', '--training-runs', type=int, default=1000, dest='num_steps',
                         help='number of training steps (default: 1000)')
+    parser.add_argument('--seed',  type=int, default=43, dest='seed',
+                            help='RNG seed')
     parser.add_argument('--num-docs', type=int, default=None, dest='num_docs',
                         help='use only the first N documents after shuffling (default: all)')
+    parser.add_argument('--temperature', type=float, default=0.6, dest='temperature',
+                            help='Temperature')
     parser.add_argument('--num-samples', type=int, default=10, dest='num_samples',
                             help='generate N emissions fro GPT')
-    parser.add_argument('--corpus-file', type=str, default=DEFAULT_CORPUS, dest='corpus_file',
+    parser.add_argument('--corpus-file', type=str, default=None, dest='corpus_file',
                         help=f'training corpus, one document per line (default: {DEFAULT_CORPUS})')
     parser.add_argument('--token-type', choices=('letter', 'word'), default='letter', dest='token_type',
                         help='how documents are split into tokens (default: letter)')
@@ -201,7 +205,7 @@ def build_parser():
 def main(argv=None, verbose=True):
     args = build_parser().parse_args(argv)
     if args.model_path and not args.corpus_file:
-            model =  load_model(args.model_path, verbose=verbose)
+        model =  load_model(args.model_path, verbose=verbose)
     else:
         if verbose:
             print(f"training a new model on {args.corpus_file}")
@@ -215,7 +219,7 @@ def main(argv=None, verbose=True):
         # return model
     
     print("--- inference (new, hallucinated documents) ---")
-    karpathy.generate(model, num_samples=args.num_samples,temperature=0.5)
+    karpathy.generate(model, num_samples=args.num_samples,temperature=args.temperature, seed=args.seed)
     return 0
 
 if __name__ == '__main__':
