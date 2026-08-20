@@ -20,12 +20,12 @@ CONFIG_DEFAULTS = {
 }
 
 
-def new_model_config(docs, token_type='letter', verbose=True, **overrides):
+def new_model_config(docs, token_type='letter', verbose=True, seed=None, **overrides):
     """Build a tokenizer from `docs` and initialise a fresh set of weights."""
     config = CONFIG_DEFAULTS.copy()
     config.update(overrides)
     config['token_type'] = token_type
-
+    random.seed(seed)
     # Let there be a Tokenizer to translate strings to sequences of integers ("tokens") and back
     config['uchars'] = sorted({t for d in docs for t in doc_to_tokens(d, token_type)}) # unique tokens become ids 0..n-1
 
