@@ -72,9 +72,9 @@ describing what a specific cell does, nothing more. No narrative voice.
   matplotlib, numpy, ipykernel.
 - Registered kernel: **`lcgpt`** / display name "LightningcatcherGPT". User-level
   kernelspec, so any Jupyter server on this machine can see it.
-- A JupyterLab 4.5.9 server already runs on **localhost:8888**, but it is rooted
-  at `/Users/scotfree/projects/games/gettingthere` and cannot reach this
-  directory. See README for how notebooks actually get opened.
+- Notebooks need a server rooted **here**; one rooted elsewhere cannot navigate
+  up into this directory. See README. A server Claude launches in the background
+  dies with the session — start it in a terminal to keep it.
 - The full 1000-step training run takes ~63s on CPU (~0.06 s/step plus a ~1.2 s
   floor dominated by the 20 inference samples), so notebooks can train live
   rather than shipping cached weights. Runtime scales with step count only —
@@ -87,3 +87,62 @@ describing what a specific cell does, nothing more. No narrative voice.
 1. Plumbing & tokenization  2. Derivatives, computation graphs & gradient
 descent  3. The transformer block  4. Attention  5. Loss & training.
 Follow-ups: fine-tuning, deployment, entropy/Markov.
+
+Node 1 is now **tokenization only** — corpus plumbing moved to `lcgpt.py`, which
+the notebooks do not discuss. Filenames keep the original node names.
+
+## State as of 2026-08-22
+
+All five notebooks are regenerated against `karpathy.py`, quoted by line number,
+every source-derived cell verified byte-for-byte, every non-blank source line
+covered by exactly one section, every section exactly two cells. Three demos are
+not from the source and do run: Shannon n-grams (§1.8), gradient descent (§2.8),
+and the tiny model (§3.11).
+
+Regeneration is scripted, not hand-edited: write `@@SRC a-b@@` placeholders into
+the `.md`, substitute verbatim lines from `karpathy.py`, convert with jupytext,
+then verify fidelity and coverage. **If `karpathy.py` changes, re-run that rather
+than patching notebooks** — every line reference shifts.
+
+Notebook demo cells must `sys.path.insert(0, '..')` before importing `karpathy`
+or `lcgpt`: Jupyter's working directory is `notebooks/` and the modules are one
+level up. Two demos shipped broken for a day because this was only ever tested
+with the path injected from outside the cell.
+
+## Open issues
+
+1. **The tiny-model demo's corpus is a fallback.** Two better ideas were tried and
+   measured as failures. A copy rule (3rd char = 1st) does not learn reliably even
+   at 8000 steps (13/20 samples in-corpus), so it cannot carry a "watch it learn"
+   demo. A two-dialect corpus learns well (19/20) but its 2-D token embeddings do
+   **not** separate by dialect, so the "plot the embeddings and see the structure"
+   payoff is not available at this size. Anything built on embedding geometry
+   needs re-measuring first.
+2. **Notebook 04 has no tiny-model counterpart.** Attention weights are activations,
+   not parameters, and a 1-head model over 4 positions would make them printable.
+   Design doc §7.5 wants attention heatmaps; nothing has been built.
+3. **`generate()` reseeds the global RNG** (`karpathy.py`, `seed=42` default). Fine
+   when every call passes `seed=` explicitly, which the CLI does. A private
+   `random.Random(seed)` would keep sampling deterministic without moving anyone
+   else's stream.
+4. **`new_model_config` calls `random.seed(seed)` unconditionally**, so `seed=None`
+   reseeds from OS entropy and discards a seed the caller set beforehand. Guarding
+   with `if seed is not None` would let a notebook seed once at the top.
+5. **Stale docs in `lcgpt.py`**: the module docstring still describes
+   `karpathy_gpt_cli.py`, and its "As a library" paragraph runs into the next
+   sentence where examples were removed. `load_docs_textfile`'s docstring still
+   promises to fetch a default corpus, which no longer happens by design.
+   `SAVED_KEYS` lists `vocab_size` twice; `math` is imported unused.
+6. **Bare `python lcgpt.py`** dies with a raw `FileNotFoundError: model.json`
+   rather than an argparse usage message. Deliberate that args are required, but
+   `--model` still carries a default, which is what makes the message unhelpful.
+7. **Notebook 01's word-level section (§1.9) is still a placeholder.** The
+   mechanism exists and is measured (61 → 612 vocabulary on the Beatles corpus);
+   the demo's framing, corpus and scope are not designed.
+8. **The lyrics blob is still fetchable from GitHub by SHA.** History was rewritten
+   and force-pushed 2026-08-18, and the file 404s at HEAD, but commit
+   `f2a75cd99d5b93a57bd3a1743a38907ac8202492` still resolves via the API. GitHub
+   Support must purge it; not yet filed.
+9. **Untracked and undecided**: `names_mini3.json` (a saved model; `.gitignore`
+   covers `model*.json` but not this name) and `notebooks/archive/` (the
+   pre-regeneration notebooks).
