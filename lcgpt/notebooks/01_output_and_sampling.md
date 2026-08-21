@@ -14,7 +14,7 @@ kernelspec:
 # 01 — Output
 
 Covers `karpathy.py` lines 244–276, the *Machine Learning - Output* section, plus
-`softmax` from lines 75–79: taking a model that already exists and drawing text
+the imports at lines 1–2 and `softmax` from lines 75–79: taking a model that already exists and drawing text
 out of it.
 
 Nothing here trains anything. `generate` asks some function for a score over every
@@ -28,7 +28,18 @@ function. Anything that is *not* from the source is marked as such.
 
 +++
 
-## 1.1 Turning tokens back into text — lines 245–246
+## 1.1 What it takes to build a GPT — lines 1–2
+
+Two standard-library modules. `math` for `log` and `exp`; `random` for weight
+initialisation and sampling. No tensors, no array library, no accelerator — the
+whole model is Python floats, and that is what makes every line of it readable.
+
+```{code-cell} ipython3
+import math
+import random
+```
+
+## 1.2 Turning tokens back into text — lines 245–246
 
 The tokenizer's inverse, and the one place the two token types differ: characters
 butt together, words need spaces between them.
@@ -38,7 +49,7 @@ def tokens_to_text(tokens, token_type):
     return ('' if token_type == 'letter' else ' ').join(tokens)
 ```
 
-## 1.2 From logits to probabilities — lines 75–79
+## 1.3 From logits to probabilities — lines 75–79
 
 A model emits one unbounded real number — a *logit* — per vocabulary entry.
 Sampling needs a probability distribution, so the logits are exponentiated and
@@ -64,7 +75,7 @@ def softmax(logits):
     return [e / total for e in exps]
 ```
 
-## 1.3 Setting up a generation run — lines 248–258
+## 1.4 Setting up a generation run — lines 248–258
 
 `logit_model=gpt` is the important argument. `generate` never mentions attention,
 embeddings or weights — it only needs *something* it can call for logits, and the
@@ -87,7 +98,7 @@ def generate(config, num_samples=20, temperature=0.5, verbose=True, seed=None, l
         print(f"Generating {num_samples} samples at T={temperature} with seed {seed}")
 ```
 
-## 1.4 The sampling loop — lines 260–276
+## 1.5 The sampling loop — lines 260–276
 
 Each sample starts from `BOS` with an empty cache and runs until the model emits
 `BOS` again or the context window fills.
@@ -126,7 +137,7 @@ for sample_idx in range(num_samples):
 return samples
 ```
 
-## 1.5 A model made of counts
+## 1.6 A model made of counts
 
 Not from the source. `logit_model` is just a function with the signature
 `(config, token_id, pos_id, keys, values) -> logits`, so anything matching it can

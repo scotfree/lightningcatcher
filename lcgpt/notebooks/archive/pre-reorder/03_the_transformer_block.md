@@ -4,6 +4,7 @@ jupytext:
     extension: .md
     format_name: myst
     format_version: 0.13
+    jupytext_version: 1.19.5
 kernelspec:
   display_name: LightningcatcherGPT
   language: python
@@ -368,4 +369,8 @@ for name, mat in config['state_dict'].items():
     print(f"\n{name}")
     for row in mat:
         print("   ", "  ".join(f"{p.data:+.4f}" for p in row))
+```
+
+```{code-cell} ipython3
+
 ```

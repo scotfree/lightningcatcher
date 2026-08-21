@@ -4,11 +4,14 @@ jupytext:
     extension: .md
     format_name: myst
     format_version: 0.13
+    jupytext_version: 1.19.5
 kernelspec:
   display_name: LightningcatcherGPT
   language: python
   name: lcgpt
 ---
+
++++ {"editable": true, "slideshow": {"slide_type": ""}}
 
 # 04 — Attention
 
