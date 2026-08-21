@@ -99,10 +99,17 @@ covered by exactly one section, every section exactly two cells. Three demos are
 not from the source and do run: Shannon n-grams (§1.8), gradient descent (§2.8),
 and the tiny model (§3.11).
 
-Regeneration is scripted, not hand-edited: write `@@SRC a-b@@` placeholders into
-the `.md`, substitute verbatim lines from `karpathy.py`, convert with jupytext,
-then verify fidelity and coverage. **If `karpathy.py` changes, re-run that rather
-than patching notebooks** — every line reference shifts.
+Regeneration is **not** scripted and never has been (corrected 2026-08-21 — an
+earlier version of this file claimed otherwise and sent a session hunting for a
+script that does not exist). The notebooks are authored by Claude directly, in a
+conversation that first settles the section ordering; the author then edits the
+notebooks heavily by hand, so automating past that point is not worth it.
+
+The one technique worth reusing is placeholder substitution *within* an authoring
+pass: write `@@SRC a-b@@` into the `.md`, substitute verbatim lines from
+`karpathy.py`, convert with jupytext, then verify fidelity and coverage. That
+keeps quoted source byte-exact without retyping it. **If `karpathy.py` changes,
+every line reference shifts.**
 
 Notebook demo cells must `sys.path.insert(0, '..')` before importing `karpathy`
 or `lcgpt`: Jupyter's working directory is `notebooks/` and the modules are one
