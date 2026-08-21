@@ -1,12 +1,7 @@
 import math
 import random
 
-
-
-WORD_TRIM = '!"\'(),-.?—'
-
-# The architecture. Overridable via new_config(**overrides), but these are the
-# numbers the notebooks describe and the anchor hard-codes.
+# Configuration and Computation
 CONFIG_DEFAULTS = {
     'n_layer': 1,     # depth of the transformer neural network (number of layers)
     'n_embd': 16,     # width of the network (embedding dimension)
@@ -20,55 +15,7 @@ CONFIG_DEFAULTS = {
 }
 
 
-def new_model_config(docs, token_type='letter', verbose=True, seed=None, **overrides):
-    """Build a tokenizer from `docs` and initialise a fresh set of weights."""
-    config = CONFIG_DEFAULTS.copy()
-    config.update(overrides)
-    config['token_type'] = token_type
-    random.seed(seed)
-    # Let there be a Tokenizer to translate strings to sequences of integers ("tokens") and back
-    config['uchars'] = sorted({t for d in docs for t in doc_to_tokens(d, token_type)}) # unique tokens become ids 0..n-1
 
-    config['head_dim'] = config['n_embd'] // config['n_head']    # derived dimension of each head
-    config['vocab_size'] = len(config['uchars']) + 1             # +1 is for BOS
-    config['BOS'] = len(config['uchars'])                        # id of the Beginning of Sequence token
-
-    # Initialize the parameters, to store the knowledge of the model
-    n_embd, vocab_size, block_size = config['n_embd'], config['vocab_size'], config['block_size']
-    matrix = lambda nout, nin, std=0.08: [[Value(random.gauss(0, std)) for _ in range(nin)] for _ in range(nout)]
-    state_dict = {'wte': matrix(vocab_size, n_embd), 'wpe': matrix(block_size, n_embd), 'lm_head': matrix(vocab_size, n_embd)}
-    for i in range(config['n_layer']):
-        state_dict[f'layer{i}.attn_wq'] = matrix(n_embd, n_embd)
-        state_dict[f'layer{i}.attn_wk'] = matrix(n_embd, n_embd)
-        state_dict[f'layer{i}.attn_wv'] = matrix(n_embd, n_embd)
-        state_dict[f'layer{i}.attn_wo'] = matrix(n_embd, n_embd)
-        state_dict[f'layer{i}.mlp_fc1'] = matrix(4 * n_embd, n_embd)
-        state_dict[f'layer{i}.mlp_fc2'] = matrix(n_embd, 4 * n_embd)
-    config['state_dict'] = state_dict
-
-    if verbose:
-        print(f"vocab size: {vocab_size} ({token_type} tokens)")
-        print(f"Dimensions: {config['n_layer']} x  {config['n_embd']} x {config['n_embd']} ")
-        print(f"Num. Params: {len([p for mat in config['state_dict'].values() for row in mat for p in row])}")
-        # Documents longer than the context window are silently cut short by the
-        # `n = min(block_size, ...)` in train(). Worth saying out loud on an unfamiliar corpus.
-        over = sum(1 for d in docs if len(doc_to_tokens(d, token_type)) + 1 > block_size)
-        if over:
-            print(f"note: {over} of {len(docs)} documents ({100 * over / len(docs):.0f}%) are longer than "
-                  f"block_size={block_size} and will be truncated")
-    return config
-
-
-def doc_to_tokens(doc, token_type):
-    if token_type == 'letter':
-        return list(doc)
-    cleaned = (w.strip(WORD_TRIM) for w in doc.lower().replace('’', "'").split())
-    return [w for w in cleaned if w]
-
-def tokens_to_text(tokens, token_type):
-    return ('' if token_type == 'letter' else ' ').join(tokens)
-
-# Let there be Autograd to recursively apply the chain rule through a computation graph
 class Value:
     __slots__ = ('data', 'grad', '_children', '_local_grads') # Python optimization for memory usage
 
@@ -113,10 +60,17 @@ class Value:
             for child, local_grad in zip(v._children, v._local_grads):
                 child.grad += local_grad * v.grad
 
-# Define the model architecture: a function mapping tokens and parameters to logits over what comes next
-# Follow GPT-2, blessed among the GPTs, with minor differences: layernorm -> rmsnorm, no biases, GeLU -> ReLU
-def linear(x, w):
-    return [sum(wi * xi for wi, xi in zip(wo, x)) for wo in w]
+
+
+
+
+# GPT Model and Attention
+
+
+def rmsnorm(x):
+    ms = sum(xi * xi for xi in x) / len(x)
+    scale = (ms + 1e-5) ** -0.5
+    return [xi * scale for xi in x]
 
 def softmax(logits):
     max_val = max(val.data for val in logits)
@@ -124,10 +78,49 @@ def softmax(logits):
     total = sum(exps)
     return [e / total for e in exps]
 
-def rmsnorm(x):
-    ms = sum(xi * xi for xi in x) / len(x)
-    scale = (ms + 1e-5) ** -0.5
-    return [xi * scale for xi in x]
+def linear(x, w):
+    return [sum(wi * xi for wi, xi in zip(wo, x)) for wo in w]
+
+def new_model_config(docs, token_type='letter', verbose=True, seed=None, **overrides):
+    """Build a tokenizer from `docs` and initialise a fresh set of weights."""
+    config = CONFIG_DEFAULTS.copy()
+    config.update(overrides)
+    config['token_type'] = token_type
+    random.seed(seed)
+    # Let there be a Tokenizer to translate strings to sequences of integers ("tokens") and back
+    config['uchars'] = sorted({t for d in docs for t in doc_to_tokens(d, token_type)}) # unique tokens become ids 0..n-1
+    config['head_dim'] = config['n_embd'] // config['n_head']    # derived dimension of each head
+    config['vocab_size'] = len(config['uchars']) + 1             # +1 is for BOS
+    config['BOS'] = len(config['uchars'])                        # id of the Beginning of Sequence token
+
+    # Initialize the parameters, to store the knowledge of the model
+    n_embd, vocab_size, block_size = config['n_embd'], config['vocab_size'], config['block_size']
+
+    matrix = lambda nout, nin, std=0.08: [[Value(random.gauss(0, std)) for _ in range(nin)] for _ in range(nout)]
+
+    state_dict = {'wte': matrix(vocab_size, n_embd), 'wpe': matrix(block_size, n_embd), 'lm_head': matrix(vocab_size, n_embd)}
+    for i in range(config['n_layer']):
+        state_dict[f'layer{i}.attn_wq'] = matrix(n_embd, n_embd)
+        state_dict[f'layer{i}.attn_wk'] = matrix(n_embd, n_embd)
+        state_dict[f'layer{i}.attn_wv'] = matrix(n_embd, n_embd)
+        state_dict[f'layer{i}.attn_wo'] = matrix(n_embd, n_embd)
+        state_dict[f'layer{i}.mlp_fc1'] = matrix(4 * n_embd, n_embd)
+        state_dict[f'layer{i}.mlp_fc2'] = matrix(n_embd, 4 * n_embd)
+    config['state_dict'] = state_dict
+
+    if verbose:
+        print(f"vocab size: {vocab_size} ({token_type} tokens)")
+        print(f"Dimensions: {config['n_layer']} x  {config['n_embd']} x {config['n_embd']} ")
+        print(f"Num. Params: {len([p for mat in config['state_dict'].values() for row in mat for p in row])}")
+        # Documents longer than the context window are silently cut short by the
+        # `n = min(block_size, ...)` in train(). Worth saying out loud on an unfamiliar corpus.
+        over = sum(1 for d in docs if len(doc_to_tokens(d, token_type)) + 1 > block_size)
+        if over:
+            print(f"note: {over} of {len(docs)} documents ({100 * over / len(docs):.0f}%) are longer than "
+                  f"block_size={block_size} and will be truncated")
+    return config
+
+
 
 def gpt(config, token_id, pos_id, keys, values):
     state_dict = config['state_dict']
@@ -170,8 +163,15 @@ def gpt(config, token_id, pos_id, keys, values):
     logits = linear(x, state_dict['lm_head'])
     return logits
 
+# Machine Learning - Input
+def doc_to_tokens(doc, token_type):
+    if token_type == 'letter':
+        return list(doc)
+    WORD_TRIM = '!"\'(),-.?—'
+    cleaned = (w.strip(WORD_TRIM) for w in doc.lower().replace('’', "'").split())
+    return [w for w in cleaned if w]
 
-def train(config, docs, num_steps=1000, verbose=True, **hyper):
+def train(config, docs, num_steps=1000, verbose=True, logit_model=gpt,  **hyper):
     """Train `config` in place on `docs`, one document per step. Returns the config."""
     #settings = dict(TRAIN_DEFAULTS)
     config.update(hyper)
@@ -190,16 +190,20 @@ def train(config, docs, num_steps=1000, verbose=True, **hyper):
     for step in range(num_steps):
 
         # Take single document, tokenize it, surround it with BOS special token on both sides
+        # n determines the number of positions for truncation
         doc = docs[step % len(docs)]
         tokens = [BOS] + [uchars.index(tok) for tok in doc_to_tokens(doc, token_type)] + [BOS]
         n = min(block_size, len(tokens) - 1)
 
         # Forward the token sequence through the model, building up the computation graph all the way to the loss
+
         keys, values = [[] for _ in range(n_layer)], [[] for _ in range(n_layer)]
         losses = []
         for pos_id in range(n):
             token_id, target_id = tokens[pos_id], tokens[pos_id + 1]
-            logits = gpt(config, token_id, pos_id, keys, values)
+
+            logits = logit_model(config, token_id, pos_id, keys, values)
+
             probs = softmax(logits)
             loss_t = -probs[target_id].log()
             losses.append(loss_t)
@@ -209,6 +213,7 @@ def train(config, docs, num_steps=1000, verbose=True, **hyper):
         loss.backward()
 
         # Adam optimizer update: update the model parameters based on the corresponding gradients
+        # Note this is pure ML, no GPT/etc?
         lr_t = learning_rate * (1 - step / num_steps) # linear learning rate decay
         for i, p in enumerate(params):
             m[i] = beta1 * m[i] + (1 - beta1) * p.grad
@@ -225,7 +230,11 @@ def train(config, docs, num_steps=1000, verbose=True, **hyper):
         print()
     return config
 
-def generate(config, num_samples=20, temperature=0.5, verbose=True, seed=None):
+# Machine Learning - Output
+def tokens_to_text(tokens, token_type):
+    return ('' if token_type == 'letter' else ' ').join(tokens)
+
+def generate(config, num_samples=20, temperature=0.5, verbose=True, seed=None, logit_model=gpt):
     """Sample from the model. Returns a list of decoded strings.
 
     `temperature` is in (0, 1] to control the "creativity" of generated text, low to high.
@@ -236,13 +245,14 @@ def generate(config, num_samples=20, temperature=0.5, verbose=True, seed=None):
     uchars, BOS, token_type = config['uchars'], config['BOS'], config['token_type']
     if verbose:
         print(f"Generating {num_samples} samples at T={temperature} with seed {seed}")
+        
     samples = []
     for sample_idx in range(num_samples):
         keys, values = [[] for _ in range(n_layer)], [[] for _ in range(n_layer)]
         token_id = BOS
         sample = []
         for pos_id in range(block_size):
-            logits = gpt(config, token_id, pos_id, keys, values)
+            logits = logit_model(config, token_id, pos_id, keys, values)
             probs = softmax([l / temperature for l in logits])
             token_id = random.choices(range(vocab_size), weights=[p.data for p in probs])[0]
             if token_id == BOS:
@@ -253,5 +263,29 @@ def generate(config, num_samples=20, temperature=0.5, verbose=True, seed=None):
         if verbose:
             print(f"sample {sample_idx+1:2d}: {text}")
     return samples
+
+
+
+
+# Model Settings and Computation
+# Machine Learning
+# GPT Model & Attention
+
+## Define the model architecture: a function mapping tokens and parameters to logits over what comes next
+## Follow GPT-2, blessed among the GPTs, with minor differences: layernorm -> rmsnorm, no biases, GeLU -> ReLU
+
+## The actual language model. Called in training and sampling. 
+##  Called on a token and location, and returns logits across all locations.
+
+# The architecture. Overridable via new_config(**overrides), but these are the
+# numbers the notebooks describe and the anchor hard-codes.
+
+
+# Let there be Autograd to recursively apply the chain rule through a computation graph
+
+
+
+
+
 
 
