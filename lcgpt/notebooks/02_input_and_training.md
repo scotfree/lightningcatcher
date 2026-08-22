@@ -71,7 +71,6 @@ CONFIG_DEFAULTS = {
     'eps_adam': 1e-8
 }
 
-
 ```
 
 ## 2.3 Building the vocabulary — lines 156–165
@@ -125,7 +124,6 @@ def new_model_config(docs, token_type='letter', verbose=True, seed=None, **overr
             print(f"note: {over} of {len(docs)} documents ({100 * over / len(docs):.0f}%) are longer than "
                   f"block_size={block_size} and will be truncated")
     return config
-
 ```
 
 ## 2.5 What training needs — lines 185–198

@@ -28,32 +28,79 @@ function. Anything that is *not* from the source is marked as such.
 
 +++
 
-## 1.1 What it takes to build a GPT — lines 1–2
+Let's talk about generating sequences of tokens.
 
-Two standard-library modules. `math` for `log` and `exp`; `random` for weight
-initialisation and sampling. No tensors, no array library, no accelerator — the
-whole model is Python floats, and that is what makes every line of it readable.
+The tokens might be letters in english names, or words in the lyrics of the first three Beatles albums. We don't know and iMt doesn't matter. If we have an "alphabet" or "vacabulary" of $n$ tokens, a reasonable thing to do would be to give each token a probability, then sample according to that. Remember that a probability distribution looks like:
+
+$$
+P = \{ p_i \in [0,1] \mid \sum p_i = 1 \}
+$$
+
+So, for example, given a vocabulary of three tokens $T=\{ t_1, t_2, t_3 \}$ like $[A,B,C]$ we might have $P=\{ 0.5, 0.25, 0.25 \}$ we know the first token s twice as often as the others. We can generate according to this simple model easily:
+
+```{code-cell} ipython3
+import random
+random.choices(['a', 'b', 'c'], weights=[0.5, 0.25, 0.25],k=10)
+```
+
+## Logits and probabilitie
+_lines 75–79_
+
+Sometimes dealing with real probabilities is a hassle or for experimental reasons we'd like to use something more like _weights_. It would be almost the same to say $\{ 61, 29, 31 \}$. Logits are a nice way to do that - they are simply a mapping from probabilites onto the whole line, thus:
+
+
+$$
+\begin{align}
+\mathit{logit} &: [0,1] \to \mathbb{R} \\
+& p \mapsto \ln( \frac{p}{1-p} )
+\end{align}
+$$
 
 ```{code-cell} ipython3
 import math
-import random
+def logit(p):
+    return math.log(p/(1.0-p))
+
+import matplotlib.pyplot as plt
+
+X=[x/100.0 for x in range(1,100)]
+Y=[ logit(x) for x in X]
+plt.plot(X,Y)
 ```
+
+```{code-cell} ipython3
+good_weights = [63, 21, 19]
+print([w/sum(weights) for w in weights])
+
+bad_weights = good_weights + [0]
+print([w/sum(bad_weights) for w in bad_weights])
+```
+
+```{code-cell} ipython3
+softmax(good_weights)
+```
+
+```{code-cell} ipython3
+def softmax(logits):
+    max_val = max(val.data for val in logits)
+    exps = [(val - max_val).exp() for val in logits]
+    total = sum(exps)
+    return [e / total for e in exps]
+```
+
+def tokens_to_text(tokens, token_type):
+    return ('' if token_type == 'letter' else ' ').join(tokens)
+
++++
 
 ## 1.2 Turning tokens back into text — lines 245–246
 
 The tokenizer's inverse, and the one place the two token types differ: characters
 butt together, words need spaces between them.
 
-```{code-cell} ipython3
-def tokens_to_text(tokens, token_type):
-    return ('' if token_type == 'letter' else ' ').join(tokens)
-```
++++
 
-## 1.3 From logits to probabilities — lines 75–79
-
-A model emits one unbounded real number — a *logit* — per vocabulary entry.
-Sampling needs a probability distribution, so the logits are exponentiated and
-normalised:
+Other times we'll  be given a list of weights and want to make it into a probability distribution. Thus, _softma()_:
 
 $$
 p_i \;=\; \frac{e^{z_i}}{\sum_j e^{z_j}}
@@ -67,13 +114,12 @@ Note the type: `softmax` reaches for `val.data` and `.exp()`, so its inputs must
 around a number; generation never calls `backward()`, so the box does nothing here.
 Notebook 05 opens it.
 
-```{code-cell} ipython3
-def softmax(logits):
-    max_val = max(val.data for val in logits)
-    exps = [(val - max_val).exp() for val in logits]
-    total = sum(exps)
-    return [e / total for e in exps]
-```
++++
+
+# Generating a Sequence of Tokens
+
+
++++
 
 ## 1.4 Setting up a generation run — lines 248–258
 
@@ -118,6 +164,11 @@ repeated calls differ. The drawn token becomes the next input, so the sequence i
 fed back into itself one position at a time.
 
 ```{code-cell} ipython3
+---
+editable: true
+slideshow:
+  slide_type: ''
+---
 samples = []
 for sample_idx in range(num_samples):
     keys, values = [[] for _ in range(n_layer)], [[] for _ in range(n_layer)]
