@@ -84,36 +84,48 @@ describing what a specific cell does, nothing more. No narrative voice.
 
 ## Node structure (design doc §5)
 
-**Reversed 2026-08-21.** `karpathy.py` is now organised into four labelled
-sections, and the notebooks walk them backwards, outputs first:
+**Reversed 2026-08-21; `Value` moved to slot 2 on 2026-08-23.** `karpathy.py` is
+organised into four labelled sections, and the notebooks walk them backwards,
+outputs first — except `Value`, which is pulled forward to sit right behind the
+first notebook:
 
 1. **Output** (`01_output_and_sampling`) — `generate`, sampling, temperature.
-2. **Input** (`02_input_and_training`) — tokenizing, the training loop, Adam.
-3. **GPT** (`03_the_gpt`) — embeddings, MLP, residual stream, output head.
-4. **Attention** (`04_attention`) — lines 120–136, the interior of `gpt`.
-5. **Computation** (`05_computation`) — `Value` and `backward()`.
+2. **Values** (`02_values_autodiff_and_gradient_descent`) — `Value`, `backward()`,
+   autodiff and gradient descent.
+3. **Input** (`03_input_and_training`) — tokenizing, the training loop, Adam.
+4. **GPT** (`04_the_gpt`) — embeddings, MLP, residual stream, output head.
+5. **Attention** (`05_attention`) — lines 120–136, the interior of `gpt`.
 
 Follow-ups: fine-tuning, deployment, entropy/Markov.
 
 The reason for the order: each notebook establishes the interface
 `(config, token_id, pos_id, keys, values) -> logits` and then a later one gives a
 better implementation of it. Notebook 01 drives `generate` with an n-gram counter,
-notebook 02 with a learnable bigram table, and only notebook 03 introduces the
+notebook 03 with a learnable bigram table, and only notebook 04 introduces the
 transformer. `logit_model=` on `train` and `generate` is what makes this possible;
 do not remove it.
 
+The reason `Value` is second rather than last: it is the classical machine learning
+— differentiation and gradient descent — that everything after it leans on, and it
+was being referred to from every other notebook. Notebook 01 still treats it as an
+unopened box; notebook 02 opens it. (Decided 2026-08-23.)
+
 The old forward-order notebooks are in `notebooks/archive/pre-reorder/`.
 
-## State as of 2026-08-21
+## State as of 2026-08-23
 
 All five notebooks are written against the reversed order, quoted by line number,
 every source-derived cell verified byte-for-byte, every non-blank source line of
 `karpathy.py` 1–279 covered by exactly one section across the set, every section
-exactly two cells. Section counts: 6, 12, 8, 8, 6.
+exactly two cells. Section counts: 6, 7, 12, 8, 8.
 
-Five demos are not from the source and all run: the n-gram counter (§1.6), the
-learnable bigram (§2.12), the tiny model (§3.8), attention weights (§4.8) and
-gradient descent (§5.6).
+Six demos are not from the source and all run: the n-gram counter (§1.6), the
+cubic and its derivative (§2.6), gradient descent (§2.7), the learnable bigram
+(§3.12), the tiny model (§4.8) and attention weights (§5.8).
+
+§2.6 is the only notebook cell that plots with a considered palette rather than
+matplotlib defaults (categorical slots `#2a78d6` / `#eb6834`, validated
+colourblind-safe). Nothing else was restyled.
 
 **Verbatim source cells are not executable and never have been.** Dedented
 fragments reference locals that do not exist, and `generate`'s `logit_model=gpt`
@@ -146,7 +158,7 @@ with the path injected from outside the cell.
    **not** separate by dialect, so the "plot the embeddings and see the structure"
    payoff is not available at this size. Anything built on embedding geometry
    needs re-measuring first.
-2. ~~**Notebook 04 has no tiny-model counterpart.**~~ **Done 2026-08-21.** §4.8
+2. ~~**The attention notebook has no tiny-model counterpart.**~~ **Done 2026-08-21.** §5.8
    re-runs lines 111–131 on the 72-parameter model with the attention weights
    kept, printing the triangle. The recomputation was verified against
    `karpathy.gpt` at 0.00e+00 max logit difference. Design doc §7.5 wants
@@ -169,7 +181,7 @@ with the path injected from outside the cell.
 7. **No word-level demo exists.** The old placeholder section was dropped in the
    reorder rather than carried over. The mechanism exists and is measured
    (61 → 612 vocabulary on the Beatles corpus) and `doc_to_tokens` is covered in
-   §2.1; the demo's framing, corpus and scope are still not designed.
+   §3.1; the demo's framing, corpus and scope are still not designed.
 8. **The lyrics blob is still fetchable from GitHub by SHA.** History was rewritten
    and force-pushed 2026-08-18, and the file 404s at HEAD, but commit
    `f2a75cd99d5b93a57bd3a1743a38907ac8202492` still resolves via the API. GitHub

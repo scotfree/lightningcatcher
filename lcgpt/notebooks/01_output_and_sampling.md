@@ -83,7 +83,7 @@ Y=[ logit(x) for x in X]
 plt.plot(X,Y)
 ```
 
-We get from `logits` back to probabilities with `softmax()`. We'll import a Value class we'll build compututation infrastructure later - for now, just think of them as Real that you have to get at with `.value()`.
+We get from `logits` back to probabilities with `softmax()`. We'll import a Value class - the computational infrastructure we open up in the next notebook. For now, just think of them as Reals that you have to get at with `.data`.
 
 ```{code-cell} ipython3
 ---
@@ -218,7 +218,7 @@ fed back into itself one position at a time.
 
 Now let's try generating a few different ways - different models we will plug into the generator.
 
-The function provided needs to give the "next token" distribution given the last token generated - which comprises the tokens in the vocabulary and the special BOS token indicating the end of a sequence. 
+The function provided needs to give the "next token" distribution given the last token generated - which comprises the tokens in the vocabulary and the special BOS token indicating the end of a sequence.
 
 +++
 
@@ -244,10 +244,9 @@ generate(stateless_binary, num_samples=10, temperature=1.0, verbose=False, \
          logit_model = stateful_binary_model_builder( simple_transitions_dist ))
 ```
 
-Now let's used a more interesting vocabulary - the 27 letters in English. 
+Now let's used a more interesting vocabulary - the 27 letters in English.
 
 ```{code-cell} ipython3
-
 raw_docs = lcgpt.load_docs_textfile('../data/beatles_first3.txt', num_docs=5000, seed=42, verbose=False)
 docs = [ s.translate(str.maketrans("", "", string.punctuation)).lower() for s in raw_docs]
 uchars = sorted({t for d in docs for t in karpathy.doc_to_tokens(d, 'letter')})

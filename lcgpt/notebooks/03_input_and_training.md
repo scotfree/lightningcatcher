@@ -13,11 +13,13 @@ kernelspec:
 
 +++ {"editable": true, "slideshow": {"slide_type": ""}}
 
-# 02 — Input
+# 03 — Input
 
 Now let's talk about creating and training the models we used above to generate text. We'll input a body of text (the `corpus`) and some configuration, then train a model in increasingly interesting ways.
 
-Along the way we'll introduce the significanly more complex computational plumbing we'll be using. The `Values` obects we've been fussing with as annoying wrappers around simple Reals start to come into their own. They become the nodes in a computational graph.
+Along the way the `Value` objects of notebook 02 come into their own. Here they stop being
+an isolated demonstration: the forward pass below builds one graph out of them per document,
+all the way to the loss, and `backward()` fills in a gradient for every parameter.
 
 Covers `karpathy.py` lines 148–242, the *Machine Learning - Input* section, plus
 `CONFIG_DEFAULTS` at lines 5–17: turning a pile of documents into tokens, and
@@ -33,7 +35,7 @@ function. Anything that is *not* from the source is marked as such.
 
 +++
 
-## 2.1 Splitting a document into tokens — lines 149–154
+## 3.1 Splitting a document into tokens — lines 149–154
 
 A *token* is whatever unit the model treats as indivisible. Two choices here:
 
@@ -54,7 +56,7 @@ def doc_to_tokens(doc, token_type):
     return [w for w in cleaned if w]
 ```
 
-## 2.2 The default configuration — lines 5–17
+## 3.2 The default configuration — lines 5–17
 
 Every dimension of the model, in one dict. `n_embd` is the width of a token's
 vector, `n_layer` the number of stacked blocks, `block_size` the furthest back
@@ -76,10 +78,9 @@ CONFIG_DEFAULTS = {
     'beta2': 0.99, 
     'eps_adam': 1e-8
 }
-
 ```
 
-## 2.3 Building the vocabulary — lines 156–165
+## 3.3 Building the vocabulary — lines 156–165
 
 Every distinct token in the corpus, sorted, becomes an integer id. Sorting matters
 — it makes the mapping reproducible across runs, which is why a saved model can
@@ -102,12 +103,12 @@ def new_tokenizer(docs, token_type='letter', **overrides):
     return config
 ```
 
-## 2.4 Tokenizer plus weights — lines 167–183
+## 3.4 Tokenizer plus weights — lines 167–183
 
 Not sure this really does anything anymore.
 
 A convenience wrapper: build the vocabulary, then hang a fresh set of weights off
-it. `init_params` is notebook 03's subject. Nothing in these notebooks calls this
+it. `init_params` is notebook 04's subject. Nothing in these notebooks calls this
 function — it exists for the command line — but it is the one place that shows the
 two halves belong to one object.
 
@@ -134,7 +135,7 @@ def new_model_config(docs, token_type='letter', verbose=True, seed=None, **overr
     return config
 ```
 
-## 2.5 What training needs — lines 185–198
+## 3.5 What training needs — lines 185–198
 
 Hyperparameters out of the config, then the flat list of every parameter in the
 model — `params` is what the optimiser walks, and its order is fixed by dict
@@ -162,7 +163,7 @@ def train(config, docs, num_steps=1000, verbose=True, logit_model=gpt,  **hyper)
     v = [0.0] * len(params) # second moment buffer
 ```
 
-## 2.6 One document at a time — lines 200–207
+## 3.6 One document at a time — lines 200–207
 
 No batching. One step, one document, cycling with `%` so the corpus repeats.
 
@@ -181,7 +182,7 @@ for step in range(num_steps):
     n = min(block_size, len(tokens) - 1)
 ```
 
-## 2.7 The forward pass — lines 209–216
+## 3.7 The forward pass — lines 209–216
 
 A fresh KV cache per document, then one call to the model per position. At
 position `pos_id` the model sees `tokens[pos_id]` and is asked to predict
@@ -205,7 +206,7 @@ for pos_id in range(n):
     logits = logit_model(config, token_id, pos_id, keys, values)
 ```
 
-## 2.8 Cross-entropy — lines 218–221
+## 3.8 Cross-entropy — lines 218–221
 
 The logits become probabilities, and the loss is the negative log of the
 probability the model assigned to the token that actually came next:
@@ -229,9 +230,9 @@ number the loss starts at in the demo below.
 loss = (1 / n) * sum(losses) # final average loss over the document sequence. May yours be low.
 ```
 
-## 2.9 Backward — lines 223–224
+## 3.9 Backward — lines 223–224
 
-One line, and notebook 05 is entirely about what it does. `loss` is the root of a
+One line, and notebook 02 is entirely about what it does. `loss` is the root of a
 graph containing every operation performed above; `backward()` walks that graph in
 reverse and leaves `p.grad` on every parameter.
 
@@ -247,7 +248,7 @@ loss.backward()
 
 +++ {"editable": true, "slideshow": {"slide_type": ""}}
 
-## 2.10 The Adam update — lines 226–235
+## 3.10 The Adam update — lines 226–235
 
 Plain gradient descent would be `p.data -= lr * p.grad`. Adam keeps two running
 averages instead, and divides the first by the square root of the second:
@@ -287,7 +288,7 @@ for i, p in enumerate(params):
     p.grad = 0
 ```
 
-## 2.12 A model made of parameters
+## 3.12 A model made of parameters
 
 Let's return to the (still simple, non-GPT) model we ended the last notebook with. We've seen how to just build a model by vounting n-grams - let's apply this new training infrastructure to do it. 
 

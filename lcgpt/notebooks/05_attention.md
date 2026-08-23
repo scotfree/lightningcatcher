@@ -13,12 +13,12 @@ kernelspec:
 
 +++ {"editable": true, "slideshow": {"slide_type": ""}}
 
-# 04 — GP Transform: Attention
+# 05 — GP Transform: Attention
 
 Covers `karpathy.py` lines 120–136: seventeen lines in the middle of `gpt`, and the
 only place in the entire model where information moves between positions.
 
-Everything in notebook 03 acted on one position's vector in isolation — `linear`,
+Everything in notebook 04 acted on one position's vector in isolation — `linear`,
 `rmsnorm`, the MLP, the embedding lookup, the output head. Run the model on a
 single token and none of them behave differently. That is the test worth applying
 here: attention is the one operation that fails it.
@@ -31,7 +31,7 @@ function. Anything that is *not* from the source is marked as such.
 
 +++
 
-## 4.1 Queries, keys and values — lines 120–122
+## 5.1 Queries, keys and values — lines 120–122
 
 Three `linear` calls on the same input, with three different learned matrices.
 Each produces a vector of width `n_embd` from the position's own state, and the
@@ -50,7 +50,7 @@ k = linear(x, state_dict[f'layer{li}.attn_wk'])
 v = linear(x, state_dict[f'layer{li}.attn_wv'])
 ```
 
-## 4.2 The cache — lines 123–124
+## 5.2 The cache — lines 123–124
 
 The key and value for this position are appended to lists that persist across
 positions. `keys[li]` therefore holds one entry per position seen so far, oldest
@@ -67,7 +67,7 @@ keys[li].append(k)
 values[li].append(v)
 ```
 
-## 4.3 Splitting into heads — lines 125–130
+## 5.3 Splitting into heads — lines 125–130
 
 The `n_embd`-wide vectors are sliced into `n_head` contiguous chunks of `head_dim`.
 Each chunk attends independently, and the results are concatenated back to full
@@ -88,7 +88,7 @@ for h in range(n_head):
     v_h = [vi[hs:hs+head_dim] for vi in values[li]]
 ```
 
-## 4.4 Attention scores — line 131
+## 5.4 Attention scores — line 131
 
 The dot product of this position's query with every cached key, one score per
 position:
@@ -106,7 +106,7 @@ vanishes. Dividing keeps the scores in a range where the softmax stays soft.
 attn_logits = [sum(q_h[j] * k_h[t][j] for j in range(head_dim)) / head_dim**0.5 for t in range(len(k_h))]
 ```
 
-## 4.5 Causal masking, by omission — line 131 again
+## 5.5 Causal masking, by omission — line 131 again
 
 A language model must not see the future. The usual implementation adds $-\infty$
 to the scores above the diagonal before the softmax.
@@ -129,7 +129,7 @@ attention triangle in the demo below is the same constraint, made visible.
 #                      bound *is* the causal mask
 ```
 
-## 4.6 Weights and the weighted sum — lines 132–134
+## 5.6 Weights and the weighted sum — lines 132–134
 
 The scores become a distribution over positions, and the head's output is the
 average of the cached values under it:
@@ -157,32 +157,32 @@ head_out = [sum(attn_weights[t] * v_h[t][j] for t in range(len(v_h))) for j in r
 x_attn.extend(head_out)
 ```
 
-## 4.7 Output projection and residual — lines 135–136
+## 5.7 Output projection and residual — lines 135–136
 
 The concatenated heads pass through a fourth learned matrix, `wo`, which is what
 lets the model mix across head boundaries — without it each head's output would
 occupy its own fixed slice of the channels forever.
 
-Then the residual add from notebook 03 closes the sub-block, and the MLP begins.
+Then the residual add from notebook 04 closes the sub-block, and the MLP begins.
 
 ```{code-cell} ipython3
 x = linear(x_attn, state_dict[f'layer{li}.attn_wo'])
 x = [a + b for a, b in zip(x, x_residual)]
 ```
 
-## 4.8 Watching one head attend
+## 5.8 Watching one head attend
 
 Not from the source. The attention weights are activations, so no trained model
 contains them and `gpt` does not return them. To see them, the attention step has
 to be run again with the weights kept.
 
-The model is notebook 03's: 72 parameters, one layer, one head, trained on `aba`
+The model is notebook 04's: 72 parameters, one layer, one head, trained on `aba`
 three times and `abc` once. The cell below reproduces lines 111–131 exactly — the
 same two `rmsnorm` calls, the same `wq`/`wk`, the same scaling — and prints the
 softmax output at each position instead of discarding it.
 
 Two things to look for. The result is **triangular**: row $t$ has exactly $t+1$
-entries, which is §4.5's mask with nothing hidden. And every row **sums to 1**,
+entries, which is §5.5's mask with nothing hidden. And every row **sums to 1**,
 because a row is a softmax — attention redistributes a fixed budget rather than
 choosing freely, so a position that attends more to one place necessarily attends
 less to another.
