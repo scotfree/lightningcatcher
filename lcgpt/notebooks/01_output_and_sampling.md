@@ -11,6 +11,19 @@ kernelspec:
   name: lcgpt
 ---
 
+```{code-cell} ipython3
+---
+editable: true
+slideshow:
+  slide_type: ''
+---
+#from pathlib import Path
+import sys
+sys.path.append('..')
+import random, math, string
+import matplotlib.pyplot as plt
+```
+
 # 01 — Output
 
 Covers `karpathy.py` lines 244–276, the *Machine Learning - Output* section, plus
@@ -39,7 +52,11 @@ $$
 So, for example, given a vocabulary of three tokens $T=\{ t_1, t_2, t_3 \}$ like $[A,B,C]$ we might have $P=\{ 0.5, 0.25, 0.25 \}$ we know the first token s twice as often as the others. We can generate according to this simple model easily:
 
 ```{code-cell} ipython3
-import random
+---
+editable: true
+slideshow:
+  slide_type: ''
+---
 random.choices(['a', 'b', 'c'], weights=[0.5, 0.25, 0.25],k=10)
 ```
 
@@ -61,23 +78,20 @@ import math
 def logit(p):
     return math.log(p/(1.0-p))
 
-import matplotlib.pyplot as plt
-
 X=[x/100.0 for x in range(1,100)]
 Y=[ logit(x) for x in X]
 plt.plot(X,Y)
 ```
 
-```{code-cell} ipython3
-good_weights = [63, 21, 19]
-print([w/sum(weights) for w in weights])
-
-bad_weights = good_weights + [0]
-print([w/sum(bad_weights) for w in bad_weights])
-```
+We get from `logits` back to probabilities with `softmax()`. We'll import a Value class we'll build compututation infrastructure later - for now, just think of them as Real that you have to get at with `.value()`.
 
 ```{code-cell} ipython3
-softmax(good_weights)
+---
+editable: true
+slideshow:
+  slide_type: ''
+---
+from karpathy import Value
 ```
 
 ```{code-cell} ipython3
@@ -88,40 +102,28 @@ def softmax(logits):
     return [e / total for e in exps]
 ```
 
-def tokens_to_text(tokens, token_type):
-    return ('' if token_type == 'letter' else ' ').join(tokens)
+What happens to a distribution across a vocabulary of size 3 as we map it to logits, then apply a Temperature transformation.
 
-+++
+```{code-cell} ipython3
+p1 = [0.5, 0.3, 0.2]
+temp = 0.1
+logits1 = [Value(logit(p)) for p in p1]
+print(p1)
+print([v.data for v in logits1])
+print([v.data for v in softmax(logits1)])
+print([v.data for v in softmax( [x/temp for x in logits1] )])
+```
 
-## 1.2 Turning tokens back into text — lines 245–246
+```{code-cell} ipython3
+#plot
+for t in [0.1, 0.5, 0.9, 0.99, 100.0]:
+    plt.plot(p1, [v.data for v in softmax( [x/t for x in logits1] )], label=f"Temperature= {t}")
+    plt.legend()
+```
 
-The tokenizer's inverse, and the one place the two token types differ: characters
-butt together, words need spaces between them.
+## Build some simple models
 
-+++
-
-Other times we'll  be given a list of weights and want to make it into a probability distribution. Thus, _softma()_:
-
-$$
-p_i \;=\; \frac{e^{z_i}}{\sum_j e^{z_j}}
-$$
-
-Subtracting `max_val` first changes nothing mathematically — the constant cancels
-between numerator and denominator — but it keeps `exp` away from overflow.
-
-Note the type: `softmax` reaches for `val.data` and `.exp()`, so its inputs must be
-`Value` objects rather than plain floats. For this notebook treat `Value` as a box
-around a number; generation never calls `backward()`, so the box does nothing here.
-Notebook 05 opens it.
-
-+++
-
-# Generating a Sequence of Tokens
-
-
-+++
-
-## 1.4 Setting up a generation run — lines 248–258
+Now that we have a framework to generate token sequences from models yielding weights across the tokan vocabulary given the current token, let's 
 
 `logit_model=gpt` is the important argument. `generate` never mentions attention,
 embeddings or weights — it only needs *something* it can call for logits, and the
@@ -131,7 +133,38 @@ default happens to be the transformer.
 repeats exactly.
 
 ```{code-cell} ipython3
-def generate(config, num_samples=20, temperature=0.5, verbose=True, seed=None, logit_model=gpt):
+---
+editable: true
+slideshow:
+  slide_type: ''
+---
+def tokens_to_text(tokens, token_type):
+    return ('' if token_type == 'letter' else ' ').join(tokens)
+
+vocabulary = ['A', 'B']
+stateless_binary = {
+    'uchars' : vocabulary,
+    'num_samples' : 3, # How many sequences of tokens should we generate?
+    'n_layer' : 1, # Don't worry about it, LLM shit
+    'BOS' :2,  # This is the "stop" token, like the end of a word or sentence
+    'block_size' : 10, # What's the longest each sequence of tokens can be?
+    'vocab_size' : len(vocabulary)+1,
+    'token_type' : 'letter'
+}
+
+
+def stateless_binary_model_builder(probs):
+    def f(config, token_id, pos_id, keys, values):
+        return ([Value(logit(x)) for x in probs])
+    return f
+
+def stateful_binary_model_builder(probs_matrix):
+    def f(config, token_id, pos_id, keys, values):
+        #print(f"Generating probs for {token_id} in {probs_matrix}")
+        return ([Value(logit(x)) for x in probs_matrix[token_id]])
+    return f
+
+def generate(config, num_samples=20, temperature=0.5, verbose=True, seed=None, logit_model=None):
     """Sample from the model. Returns a list of decoded strings.
 
     `temperature` is in (0, 1] to control the "creativity" of generated text, low to high.
@@ -142,6 +175,26 @@ def generate(config, num_samples=20, temperature=0.5, verbose=True, seed=None, l
     uchars, BOS, token_type = config['uchars'], config['BOS'], config['token_type']
     if verbose:
         print(f"Generating {num_samples} samples at T={temperature} with seed {seed}")
+    samples = []
+    for sample_idx in range(num_samples):
+        keys, values = [[] for _ in range(n_layer)], [[] for _ in range(n_layer)]
+        token_id = BOS
+        sample = []
+        for pos_id in range(block_size):
+            logits = logit_model(config, token_id, pos_id, keys, values)
+            probs = softmax([l / temperature for l in logits])
+            
+            token_id = random.choices(range(vocab_size), weights=[p.data for p in probs])[0]
+            if verbose:
+                print(f"{[x.data for x in probs]} -> {token_id}")
+            if token_id == BOS:
+                break
+            sample.append(uchars[token_id])
+        text = tokens_to_text(sample, token_type)
+        samples.append(text)
+        #if verbose:
+        #    print(f"sample {sample_idx+1:2d}: {text}")
+    return samples
 ```
 
 ## 1.5 The sampling loop — lines 260–276
@@ -163,32 +216,53 @@ distribution further.
 repeated calls differ. The drawn token becomes the next input, so the sequence is
 fed back into itself one position at a time.
 
+Now let's try generating a few different ways - different models we will plug into the generator.
+
+The function provided needs to give the "next token" distribution given the last token generated - which comprises the tokens in the vocabulary and the special BOS token indicating the end of a sequence. 
+
++++
+
+We'll start with a  simple two-token vocabulary, Heads/Tails, etc. This is simply a marginal distribution across tokens independent of sequence history.
+
 ```{code-cell} ipython3
----
-editable: true
-slideshow:
-  slide_type: ''
----
-samples = []
-for sample_idx in range(num_samples):
-    keys, values = [[] for _ in range(n_layer)], [[] for _ in range(n_layer)]
-    token_id = BOS
-    sample = []
-    for pos_id in range(block_size):
-        logits = logit_model(config, token_id, pos_id, keys, values)
-        probs = softmax([l / temperature for l in logits])
-        token_id = random.choices(range(vocab_size), weights=[p.data for p in probs])[0]
-        if token_id == BOS:
-            break
-        sample.append(uchars[token_id])
-    text = tokens_to_text(sample, token_type)
-    samples.append(text)
-    if verbose:
-        print(f"sample {sample_idx+1:2d}: {text}")
-return samples
+marginal_binary_distribution  = [0.4,0.4, 0.2]
 ```
 
+```{code-cell} ipython3
+generate(stateless_binary, num_samples=10, temperature=1.0, verbose=False, \
+         logit_model = stateless_binary_model_builder( marginal_binary_distribution))
+```
+
+Now let's allow the next token's distribution to be determined by the current token, a simple 2x2 matrix of transition probabilities. We're setting these to tend to stay on one token for a "run", which we could not do with a marginal distribution on individual tokens:
+
+```{code-cell} ipython3
+simple_transitions_dist = [[0.7,0.1, 0.2],[0.1,0.7, 0.2],[0.4,0.4, 0.2], marginal_binary_distribution]
+```
+
+```{code-cell} ipython3
+generate(stateless_binary, num_samples=10, temperature=1.0, verbose=False, \
+         logit_model = stateful_binary_model_builder( simple_transitions_dist ))
+```
+
+Now let's used a more interesting vocabulary - the 27 letters in English. 
+
+```{code-cell} ipython3
+
+raw_docs = lcgpt.load_docs_textfile('../data/beatles_first3.txt', num_docs=5000, seed=42, verbose=False)
+docs = [ s.translate(str.maketrans("", "", string.punctuation)).lower() for s in raw_docs]
+uchars = sorted({t for d in docs for t in karpathy.doc_to_tokens(d, 'letter')})
+
+simple_letters_config = {'uchars': uchars, 'vocab_size': len(uchars) + 1, 'BOS': len(uchars),
+          'block_size': 8, 'n_layer': 1, 'token_type': 'letter'}
+```
+
+## Generate n-grams for text, make a model
+
++++
+
 ## 1.6 A model made of counts
+
+_Does this all belong in NB2? It's creating a model, not generating with one. We could just import the model from a file - or put the methods in `lcgpt` abd call them = and just show the increasing state and complexity. Or leave it as a nice transisiton to NB2..._
 
 Not from the source. `logit_model` is just a function with the signature
 `(config, token_id, pos_id, keys, values) -> logits`, so anything matching it can
@@ -213,23 +287,11 @@ plausible names by $n = 4$, before any training has happened. This is the baseli
 the GPT has to beat.
 
 ```{code-cell} ipython3
-# Not from the source: an n-gram counter, called through generate() as a logit_model.
-import sys; sys.path.insert(0, '..')   # karpathy.py and lcgpt.py live one level up
-
-import math
-from collections import Counter, defaultdict
-
-import karpathy
-from karpathy import Value, generate
-import lcgpt
-
-docs = lcgpt.load_docs_textfile('../data/names.txt', num_docs=5000, seed=42, verbose=False)
-uchars = sorted({t for d in docs for t in karpathy.doc_to_tokens(d, 'letter')})
-
-config = {'uchars': uchars, 'vocab_size': len(uchars) + 1, 'BOS': len(uchars),
-          'block_size': 16, 'n_layer': 1, 'token_type': 'letter'}
-BOS, V = config['BOS'], config['vocab_size']
-
+---
+editable: true
+slideshow:
+  slide_type: ''
+---
 def count_ngrams(n):
     """Map every context of length 0..n-1 to a Counter over the tokens that follow it."""
     counts = defaultdict(Counter)
@@ -254,7 +316,8 @@ def make_shannon(n):
                         for j in range(V)]
     return shannon
 
-for n in range(1, 6):
+# use an ntuple model for generation
+for n in range(1, 10):
     out = generate(config, num_samples=8, temperature=1.0, seed=42,
                    verbose=False, logit_model=make_shannon(n))
     print(f"n={n}: {'  '.join(out)}")

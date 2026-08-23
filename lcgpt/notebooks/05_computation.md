@@ -11,6 +11,8 @@ kernelspec:
   name: lcgpt
 ---
 
++++ {"editable": true, "slideshow": {"slide_type": ""}}
+
 # 05 — Computation
 
 Covers `karpathy.py` lines 19–61: the `Value` class, and the box that notebook 01
@@ -44,18 +46,8 @@ calls.
 `__slots__` avoids a per-instance `__dict__`. A single training step on the default
 model builds hundreds of thousands of these.
 
-```{code-cell} ipython3
-class Value:
-    __slots__ = ('data', 'grad', '_children', '_local_grads') # Python optimization for memory usage
+### 5.2 Standard operations — lines 28–34
 
-    def __init__(self, data, children=(), local_grads=()):
-        self.data = data                # scalar value of this node calculated during forward pass
-        self.grad = 0                   # derivative of the loss w.r.t. this node, calculated in backward pass
-        self._children = children       # children of this node in the computation graph
-        self._local_grads = local_grads # local derivative of this node w.r.t. its children
-```
-
-## 5.2 Binary operations — lines 28–34
 
 Addition and multiplication, each recording what it was built from and what its
 local derivatives are.
@@ -73,7 +65,38 @@ The `isinstance` line lets a bare float appear on either side of an operator by
 wrapping it in a `Value` with no children, which makes it a leaf the graph simply
 stops at.
 
+## 5.4 Operators derived from the primitives — lines 40–46
+
+Subtraction, division and negation add no new derivative rules. They are rewrites
+into `+` and `*`:
+
+$$
+-a = a \cdot (-1)
+\qquad
+a - b = a + (-b)
+\qquad
+a / b = a \cdot b^{-1}
+$$
+
+So `a / b` builds two nodes — a `__pow__` and a `__mul__` — and the chain rule
+handles the quotient rule for free. The `__r*__` variants catch the case where a
+plain float is on the left, as in `(1 / n) * sum(losses)` on line 221.
+
 ```{code-cell} ipython3
+---
+editable: true
+slideshow:
+  slide_type: ''
+---
+class Value:
+    __slots__ = ('data', 'grad', '_children', '_local_grads') # Python optimization for memory usage
+
+    def __init__(self, data, children=(), local_grads=()):
+        self.data = data                # scalar value of this node calculated during forward pass
+        self.grad = 0                   # derivative of the loss w.r.t. this node, calculated in backward pass
+        self._children = children       # children of this node in the computation graph
+        self._local_grads = local_grads # local derivative of this node w.r.t. its children
+
 def __add__(self, other):
     other = other if isinstance(other, Value) else Value(other)
     return Value(self.data + other.data, (self, other), (1, 1))
@@ -81,6 +104,14 @@ def __add__(self, other):
 def __mul__(self, other):
     other = other if isinstance(other, Value) else Value(other)
     return Value(self.data * other.data, (self, other), (other.data, self.data))
+
+def __neg__(self): return self * -1
+def __radd__(self, other): return self + other
+def __sub__(self, other): return self + (-other)
+def __rsub__(self, other): return other + (-self)
+def __rmul__(self, other): return self * other
+def __truediv__(self, other): return self * other**-1
+def __rtruediv__(self, other): return other * self**-1
 ```
 
 ## 5.3 Unary operations — lines 36–39
@@ -105,37 +136,15 @@ in `rmsnorm` and in Adam's square root.
 ReLU's derivative at exactly zero is a convention — `float(self.data > 0)` picks 0.
 
 ```{code-cell} ipython3
+---
+editable: true
+slideshow:
+  slide_type: ''
+---
 def __pow__(self, other): return Value(self.data**other, (self,), (other * self.data**(other-1),))
 def log(self): return Value(math.log(self.data), (self,), (1/self.data,))
 def exp(self): return Value(math.exp(self.data), (self,), (math.exp(self.data),))
 def relu(self): return Value(max(0, self.data), (self,), (float(self.data > 0),))
-```
-
-## 5.4 Operators derived from the primitives — lines 40–46
-
-Subtraction, division and negation add no new derivative rules. They are rewrites
-into `+` and `*`:
-
-$$
--a = a \cdot (-1)
-\qquad
-a - b = a + (-b)
-\qquad
-a / b = a \cdot b^{-1}
-$$
-
-So `a / b` builds two nodes — a `__pow__` and a `__mul__` — and the chain rule
-handles the quotient rule for free. The `__r*__` variants catch the case where a
-plain float is on the left, as in `(1 / n) * sum(losses)` on line 221.
-
-```{code-cell} ipython3
-def __neg__(self): return self * -1
-def __radd__(self, other): return self + other
-def __sub__(self, other): return self + (-other)
-def __rsub__(self, other): return other + (-self)
-def __rmul__(self, other): return self * other
-def __truediv__(self, other): return self * other**-1
-def __rtruediv__(self, other): return other * self**-1
 ```
 
 ## 5.5 `backward()` — lines 48–61
@@ -194,11 +203,18 @@ f(x) = (x-3)^2
 f'(x) = 2(x-3)
 $$
 
+We'll use this computational machinery for this simple example, just to see it on its own before getting into the complexities that the GPT model uses it for.
+
 The graph is rebuilt from scratch each step, exactly as the training loop rebuilds
 the model's graph for every document — and `x.grad` is cleared each time, for the
 reason §5.5 gives.
 
 ```{code-cell} ipython3
+---
+editable: true
+slideshow:
+  slide_type: ''
+---
 # Not from the source: minimise f(x) = (x - 3)^2, whose minimum is obviously at x = 3.
 import sys; sys.path.insert(0, '..')   # karpathy.py lives one level up
 from karpathy import Value
@@ -213,4 +229,8 @@ for step in range(30):
     x.data -= lr * x.grad
     if step % 5 == 0 or step == 29:
         print(f"step {step:2d} | x {x.data:+.5f} | f(x) {y.data:.6f} | df/dx {x.grad:+.5f}")
+```
+
+```{code-cell} ipython3
+
 ```

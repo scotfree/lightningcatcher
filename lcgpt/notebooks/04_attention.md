@@ -11,7 +11,9 @@ kernelspec:
   name: lcgpt
 ---
 
-# 04 — Attention
++++ {"editable": true, "slideshow": {"slide_type": ""}}
+
+# 04 — GP Transform: Attention
 
 Covers `karpathy.py` lines 120–136: seventeen lines in the middle of `gpt`, and the
 only place in the entire model where information moves between positions.
@@ -223,4 +225,13 @@ print("            " + "".join(f"{l:>8}" for l in labels))
 for t, row in enumerate(rows):
     print(f"  pos {t} {labels[t]:>3}  " + "".join(f"{w:8.3f}" for w in row))
 print("\nrow sums:", "  ".join(f"{sum(r):.3f}" for r in rows))
+```
+
+```{code-cell} ipython3
+---
+editable: true
+slideshow:
+  slide_type: ''
+---
+
 ```

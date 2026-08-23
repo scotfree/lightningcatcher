@@ -11,7 +11,11 @@ kernelspec:
   name: lcgpt
 ---
 
-# 03 — The GPT
++++ {"editable": true, "slideshow": {"slide_type": ""}}
+
+# 03 — GP Transform: Embedding and the Single Position Vector
+
+Now at last! We get to the heard of the actual GPT model.
 
 Covers `karpathy.py` lines 70–73, 81–105 and 107–146 minus the attention interior:
 the model that has been standing in as `logit_model` for two notebooks.
@@ -30,7 +34,7 @@ knows there is a sequence.
 Code cells reproduce the source verbatim, dedented where a fragment sits inside a
 function. Anything that is *not* from the source is marked as such.
 
-+++
++++ {"editable": true, "slideshow": {"slide_type": ""}}
 
 ## 3.1 `linear` — lines 81–82
 
@@ -112,7 +116,6 @@ def init_params(config, seed=None):
         state_dict[f'layer{i}.mlp_fc2'] = matrix(n_embd, 4 * n_embd)
     config['state_dict'] = state_dict
     return config
-
 
 ```
 
@@ -272,4 +275,13 @@ for name, mat in config['state_dict'].items():
     print(f"\n{name}")
     for row in mat:
         print("   ", "  ".join(f"{p.data:+.4f}" for p in row))
+```
+
+```{code-cell} ipython3
+---
+editable: true
+slideshow:
+  slide_type: ''
+---
+
 ```

@@ -11,7 +11,13 @@ kernelspec:
   name: lcgpt
 ---
 
++++ {"editable": true, "slideshow": {"slide_type": ""}}
+
 # 02 — Input
+
+Now let's talk about creating and training the models we used above to generate text. We'll input a body of text (the `corpus`) and some configuration, then train a model in increasingly interesting ways.
+
+Along the way we'll introduce the significanly more complex computational plumbing we'll be using. The `Values` obects we've been fussing with as annoying wrappers around simple Reals start to come into their own. They become the nodes in a computational graph.
 
 Covers `karpathy.py` lines 148–242, the *Machine Learning - Input* section, plus
 `CONFIG_DEFAULTS` at lines 5–17: turning a pile of documents into tokens, and
@@ -98,6 +104,8 @@ def new_tokenizer(docs, token_type='letter', **overrides):
 
 ## 2.4 Tokenizer plus weights — lines 167–183
 
+Not sure this really does anything anymore.
+
 A convenience wrapper: build the vocabulary, then hang a fresh set of weights off
 it. `init_params` is notebook 03's subject. Nothing in these notebooks calls this
 function — it exists for the command line — but it is the one place that shows the
@@ -179,9 +187,9 @@ A fresh KV cache per document, then one call to the model per position. At
 position `pos_id` the model sees `tokens[pos_id]` and is asked to predict
 `tokens[pos_id + 1]`.
 
-This is what makes the corpus self-supervising: no labels exist, because every
+__This is what makes the corpus self-supervising: no labels exist, because every
 token is the label for the one before it. A document of length $n$ yields $n$
-training signals, not one.
+training signals, not one.__
 
 `logit_model` is the same seam `generate` used — the loop never names the
 transformer.
@@ -228,9 +236,16 @@ graph containing every operation performed above; `backward()` walks that graph 
 reverse and leaves `p.grad` on every parameter.
 
 ```{code-cell} ipython3
+---
+editable: true
+slideshow:
+  slide_type: ''
+---
 # Backward the loss, calculating the gradients with respect to all model parameters
 loss.backward()
 ```
+
++++ {"editable": true, "slideshow": {"slide_type": ""}}
 
 ## 2.10 The Adam update — lines 226–235
 
@@ -272,21 +287,9 @@ for i, p in enumerate(params):
     p.grad = 0
 ```
 
-## 2.11 Watching it train — lines 237–242
-
-The carriage return keeps the loss on one line. `train` mutates `config` in place
-and returns it.
-
-```{code-cell} ipython3
-    if verbose:
-        print(f"step {step+1:4d} / {num_steps:4d} | loss {loss.data:.4f}", end='\r')
-
-if verbose:
-    print()
-return config
-```
-
 ## 2.12 A model made of parameters
+
+Let's return to the (still simple, non-GPT) model we ended the last notebook with. We've seen how to just build a model by vounting n-grams - let's apply this new training infrastructure to do it. 
 
 Not from the source. Notebook 01 built a model out of counting. This one has the
 same shape — one row of logits per current token — but the numbers are `Value`
@@ -315,7 +318,16 @@ $$
 Nothing in the training loop knows about counting. The agreement is what the
 gradient is for.
 
++++ {"editable": true, "slideshow": {"slide_type": ""}}
+
+## Create the bigram model by training (instead of counting bigrams as above)
+
 ```{code-cell} ipython3
+---
+editable: true
+slideshow:
+  slide_type: ''
+---
 # Not from the source: the smallest model with parameters in it.
 import sys; sys.path.insert(0, '..')   # karpathy.py and lcgpt.py live one level up
 
@@ -357,4 +369,8 @@ for a in range(V):
 print(f"learned vs counted, worst probability gap: {worst:.4f}\n")
 
 generate(config, num_samples=8, temperature=0.8, seed=3, logit_model=bigram)
+```
+
+```{code-cell} ipython3
+
 ```
