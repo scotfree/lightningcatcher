@@ -13,7 +13,7 @@ kernelspec:
 
 +++ {"editable": true, "slideshow": {"slide_type": ""}}
 
-# 03 — GP Transform: Embedding and the Single Position Vector
+# 04 — GP Transform: Embedding and the Single Position Vector
 
 Now at last! We get to the heard of the actual GPT model.
 
@@ -24,7 +24,7 @@ the model that has been standing in as `logit_model` for two notebooks.
 vocabulary entry — the same signature the counting model and the bigram table
 satisfied. What changes is the middle. This notebook walks the outside of that
 middle: what goes in, what comes out, and the two per-position transforms that
-wrap the attention step. Notebook 04 opens the step itself, lines 120–136.
+wrap the attention step. Notebook 05 opens the step itself, lines 120–136.
 
 The structural claim worth holding on to: **every operation here acts on one
 position's vector alone**, with the same weights at every position. Run the model
@@ -36,7 +36,7 @@ function. Anything that is *not* from the source is marked as such.
 
 +++ {"editable": true, "slideshow": {"slide_type": ""}}
 
-## 3.1 `linear` — lines 81–82
+## 4.1 `linear` — lines 81–82
 
 A matrix-vector product, written as a list comprehension. `w` is a list of output
 rows, each the same length as `x`, so the result has one entry per row:
@@ -53,7 +53,7 @@ def linear(x, w):
     return [sum(wi * xi for wi, xi in zip(wo, x)) for wo in w]
 ```
 
-## 3.2 `rmsnorm` — lines 70–73
+## 4.2 `rmsnorm` — lines 70–73
 
 Rescales a vector to roughly unit scale, dividing by the root mean square of its
 own entries:
@@ -76,7 +76,7 @@ def rmsnorm(x):
     return [xi * scale for xi in x]
 ```
 
-## 3.3 Initialising the parameters — lines 84–105
+## 4.3 Initialising the parameters — lines 84–105
 
 Every weight in the model, created here and never created anywhere else. Gaussian
 noise at `std=0.08` — small enough that the initial logits are nearly uniform,
@@ -116,10 +116,9 @@ def init_params(config, seed=None):
         state_dict[f'layer{i}.mlp_fc2'] = matrix(n_embd, 4 * n_embd)
     config['state_dict'] = state_dict
     return config
-
 ```
 
-## 3.4 Entering the model: embeddings — lines 107–114
+## 4.4 Entering the model: embeddings — lines 107–114
 
 A token id is an integer; the model needs a vector. `wte[token_id]` is that vector,
 looked up rather than computed — a row of a matrix that gradient descent is free to
@@ -151,7 +150,7 @@ def gpt(config, token_id, pos_id, keys, values):
     x = rmsnorm(x) # note: not redundant due to backward pass via the residual connection
 ```
 
-## 3.5 The layer loop and the residual stream — lines 116–119
+## 4.5 The layer loop and the residual stream — lines 116–119
 
 `x_residual = x` before each sub-block, and `x = [a + b for a, b in zip(x, x_residual)]`
 after it. The pattern appears twice per layer, around attention and around the MLP:
@@ -176,7 +175,7 @@ for li in range(n_layer):
     x = rmsnorm(x)
 ```
 
-## 3.6 The MLP block — lines 137–143
+## 4.6 The MLP block — lines 137–143
 
 Attention has finished; this is the other half. Widen to `4 * n_embd`, apply ReLU,
 project back:
@@ -203,7 +202,7 @@ x = linear(x, state_dict[f'layer{li}.mlp_fc2'])
 x = [a + b for a, b in zip(x, x_residual)]
 ```
 
-## 3.7 The output head — lines 145–146
+## 4.7 The output head — lines 145–146
 
 One more `linear`, from `n_embd` back up to `vocab_size`, and the function returns.
 Nothing normalises these — softmax happens in the caller, whether that is `train`
@@ -218,7 +217,7 @@ logits = linear(x, state_dict['lm_head'])
 return logits
 ```
 
-## 3.8 A model small enough to read
+## 4.8 A model small enough to read
 
 Not from the source. Every section above described a matrix and asked you to accept
 that these matrices *are* the model's knowledge. At the default size that is an

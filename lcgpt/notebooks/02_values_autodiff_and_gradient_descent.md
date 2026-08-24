@@ -13,25 +13,27 @@ kernelspec:
 
 +++ {"editable": true, "slideshow": {"slide_type": ""}}
 
-# 05 — Computation
+# 02 — Values: Autodiff and Gradient Descent
 
 Covers `karpathy.py` lines 19–61: the `Value` class, and the box that notebook 01
 asked you to accept without opening.
 
-Nothing above this line is specific to language models. `Value` is a general
-reverse-mode automatic differentiator — swap the transformer for anything built out
-of the same operations and it would work unchanged. It is the layer that makes
-`loss.backward()` on line 224 a single line.
+None of this is specific to language models. `Value` is a general reverse-mode
+automatic differentiator — swap the transformer for anything built out of the same
+operations and it would work unchanged. It is the layer that makes `loss.backward()`
+on line 224 a single line in notebook 03.
 
-The reason it comes last: every earlier notebook could treat gradients as something
-that arrives. This one is where they come from.
+The reason it comes second: this is the classical machine learning the rest of the
+project sits on. Every notebook after this one treats a gradient as something that
+arrives; this is where it comes from, and the last two sections use nothing but
+`Value` — no tokens, no model, no training loop.
 
 Code cells reproduce the source verbatim, dedented where a fragment sits inside a
 class. Anything that is *not* from the source is marked as such.
 
 +++
 
-## 5.1 The `Value` node — lines 19–26
+## 2.1 The `Value` node — lines 19–26
 
 Not a number — a node in a graph. Four fields: the scalar itself, a gradient slot
 that starts at zero, the nodes this one was computed from, and the derivative of
@@ -46,7 +48,7 @@ calls.
 `__slots__` avoids a per-instance `__dict__`. A single training step on the default
 model builds hundreds of thousands of these.
 
-### 5.2 Standard operations — lines 28–34
+## 2.2 Standard operations — lines 28–34
 
 
 Addition and multiplication, each recording what it was built from and what its
@@ -54,8 +56,8 @@ local derivatives are.
 
 For $c = a + b$ the derivatives are $\partial c/\partial a = 1$ and
 $\partial c/\partial b = 1$ — hence `(1, 1)`. Addition passes gradient through
-unchanged, which is exactly why the residual connections of notebook 03 keep the
-backward path short.
+unchanged, which is exactly why the residual connections of notebook 04 will keep
+the backward path short.
 
 For $c = a \cdot b$ they are $\partial c/\partial a = b$ and
 $\partial c/\partial b = a$ — hence `(other.data, self.data)`, each factor's
@@ -65,7 +67,7 @@ The `isinstance` line lets a bare float appear on either side of an operator by
 wrapping it in a `Value` with no children, which makes it a leaf the graph simply
 stops at.
 
-## 5.4 Operators derived from the primitives — lines 40–46
+## 2.3 Operators derived from the primitives — lines 40–46
 
 Subtraction, division and negation add no new derivative rules. They are rewrites
 into `+` and `*`:
@@ -114,7 +116,7 @@ def __truediv__(self, other): return self * other**-1
 def __rtruediv__(self, other): return other * self**-1
 ```
 
-## 5.3 Unary operations — lines 36–39
+## 2.4 Unary operations — lines 36–39
 
 Four one-liners, each following the same pattern: the forward value, a
 single-element children tuple, and the local derivative.
@@ -147,7 +149,7 @@ def exp(self): return Value(math.exp(self.data), (self,), (math.exp(self.data),)
 def relu(self): return Value(max(0, self.data), (self,), (float(self.data > 0),))
 ```
 
-## 5.5 `backward()` — lines 48–61
+## 2.5 `backward()` — lines 48–61
 
 Two phases.
 
@@ -192,7 +194,73 @@ def backward(self):
             child.grad += local_grad * v.grad
 ```
 
-## 5.6 Gradient descent, on its own
+## 2.6 Derivatives for free
+
+Not from the source. Everything above is the whole mechanism; this is what it buys,
+on a function with no model anywhere near it — a cubic and its slope.
+
+$$
+f(x) = 2x^{3} - 3x^{2} - 12x + 5
+\qquad
+f'(x) = 6x^{2} - 6x - 12 = 6(x+1)(x-2)
+$$
+
+`f` is written once, in ordinary Python, with `Value` in place of `float`.
+Evaluating it builds a graph; `backward()` walks that graph and leaves $f'(x)$ in
+`x.grad`. No derivative of $f$ was ever coded — only the derivatives of $x^{n}$,
+$+$ and $\times$ were, in §2.2 and §2.4, and the chain rule of §2.5 assembled the
+rest. The analytic $f'$ is plotted over the top as a check; the two agree to
+floating-point round-off (~1e-15, printed by the cell).
+
+The dotted verticals sit at $x = -1$ and $x = 2$, the roots of $f'$. Where the
+derivative crosses zero, $f$ is flat — which is the entire fact the next section,
+and all of training, runs on.
+
+```{code-cell} ipython3
+---
+editable: true
+slideshow:
+  slide_type: ''
+---
+# Not from the source: f(x) = 2x^3 - 3x^2 - 12x + 5, differentiated by the graph itself.
+import sys; sys.path.insert(0, '..')   # karpathy.py lives one level up
+import matplotlib.pyplot as plt
+from karpathy import Value
+
+def f(x):
+    return 2 * x**3 - 3 * x**2 - 12 * x + 5
+
+xs, ys, dys = [i / 20 for i in range(-60, 81)], [], []   # x from -3.0 to 4.0
+for xv in xs:
+    x = Value(xv)      # a fresh leaf each time, so grad starts at 0
+    y = f(x)           # forward: evaluate f *and* build the graph
+    y.backward()       # backward: fill in df/dx
+    ys.append(y.data)
+    dys.append(x.grad)
+
+analytic = [6 * xv**2 - 6 * xv - 12 for xv in xs]
+print(f"max |autodiff - analytic| = {max(abs(a - b) for a, b in zip(dys, analytic)):.1e}")
+
+fig, ax = plt.subplots(figsize=(7.5, 4.5))
+ax.axhline(0, lw=1, color='0.75', zorder=0)
+for root in (-1.0, 2.0):                       # f'(x) = 0
+    ax.axvline(root, lw=1, ls=':', color='0.75', zorder=0)
+    ax.plot(root, f(Value(root)).data, 'o', ms=7, color='#2a78d6', zorder=3)
+ax.plot(xs, ys,       lw=2, color='#2a78d6', label="f(x)")
+ax.plot(xs, dys,      lw=2, color='#eb6834', label="f'(x), from x.grad")
+ax.plot(xs, analytic, lw=1, ls='--', color='0.25', label="f'(x), analytic")
+ax.set_xlabel('x')
+ax.set_title("$f(x) = 2x^3 - 3x^2 - 12x + 5$, and its derivative for free", color='0.15')
+ax.legend(frameon=False, loc='upper left')
+ax.tick_params(colors='0.35')
+for side in ('top', 'right'):
+    ax.spines[side].set_visible(False)
+for side in ('left', 'bottom'):
+    ax.spines[side].set_color('0.75')
+plt.show()
+```
+
+## 2.7 Gradient descent, on its own
 
 Not from the source. The smallest thing that exercises everything above: a scalar
 function with a known minimum, descended by hand.
@@ -207,7 +275,7 @@ We'll use this computational machinery for this simple example, just to see it o
 
 The graph is rebuilt from scratch each step, exactly as the training loop rebuilds
 the model's graph for every document — and `x.grad` is cleared each time, for the
-reason §5.5 gives.
+reason §2.5 gives.
 
 ```{code-cell} ipython3
 ---
