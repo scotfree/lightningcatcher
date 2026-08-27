@@ -509,6 +509,16 @@ for any corpus in any language — and it is the one component of a real GPT tha
 `karpathy.py` does not implement. `doc_to_tokens` (line 149) is `list(doc)` or
 `doc.split()`, and everything downstream is indifferent to which.
 
+## Sec 7
+
+### Terms to Call Out
+* causal mask
+* residual stream
+* autodifferentiation
+* hub dimension
+* ADAM
+* logits
+
 ### What is actually missing
 
 The forward pass is complete and correct. The gap between this and a production
@@ -522,8 +532,9 @@ model, in full:
   once, which is what makes the parallelism of §6.3 pay
 - **tensor operations on a GPU** — the same arithmetic, three or four orders of
   magnitude faster
-
+- Real implementations parallelise the tensor operations rather than the position loop. 
 None of those is a different idea. They are the same algorithm, engineered.
+- GPT-2 uses layernorm, which also subtracts the mean and applies a learned gain. This drops both
 
 ### Where this goes next
 
@@ -536,3 +547,7 @@ Three follow-ups extend past the 279 lines rather than explaining them:
 - **Entropy, Markov chains and language** — the companion to notebook 01's n-gram
   counter: Shannon's method, and what the neural network is doing that the counter
   is not
+
+```{code-cell} ipython3
+
+```

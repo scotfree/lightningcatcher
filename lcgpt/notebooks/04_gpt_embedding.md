@@ -13,26 +13,30 @@ kernelspec:
 
 +++ {"editable": true, "slideshow": {"slide_type": ""}}
 
-# 04 — GP Transform: Embedding and the Single Position Vector
+# 04 — GP Transform: Embedding
 
-Now at last! We get to the heard of the actual GPT model.
+The outer part of the Transform is simple embedding. 
+We map a token at a position into a fancy vector space.
+Then we do a bunch of fancy work inside hub space to get a new embedded vector.
+Then we map it back to a token (which we'll use as the token for the /next/ position in our block sequence.
 
-Covers `karpathy.py` lines 70–73, 81–105 and 107–146 minus the attention interior:
-the model that has been standing in as `logit_model` for two notebooks.
+We'll talk about the fancy work that happens in the hub space in the next Notebook - here we're just getting to and from that space.
 
-`gpt` is a function from `(config, token_id, pos_id, keys, values)` to a logit per
+**Notes**
+* `gpt` is a function from `(config, token_id, pos_id, keys, values)` to a logit per
 vocabulary entry — the same signature the counting model and the bigram table
 satisfied. What changes is the middle. This notebook walks the outside of that
 middle: what goes in, what comes out, and the two per-position transforms that
 wrap the attention step. Notebook 05 opens the step itself, lines 120–136.
 
-The structural claim worth holding on to: **every operation here acts on one
+* The structural claim worth holding on to: **every operation here acts on one
 position's vector alone**, with the same weights at every position. Run the model
 on a single token and nothing in this notebook behaves differently. Only attention
 knows there is a sequence.
 
-Code cells reproduce the source verbatim, dedented where a fragment sits inside a
-function. Anything that is *not* from the source is marked as such.
+* Covers `karpathy.py` lines 70–73, 81–105 and 107–146 minus the attention interior:
+the model that has been standing in as `logit_model` for two notebooks.
+
 
 +++ {"editable": true, "slideshow": {"slide_type": ""}}
 
@@ -76,59 +80,20 @@ def rmsnorm(x):
     return [xi * scale for xi in x]
 ```
 
-## 4.3 Initialising the parameters — lines 84–105
+## 4.4 Entering the model: Embeddings — lines 107–114
 
-Every weight in the model, created here and never created anywhere else. Gaussian
-noise at `std=0.08` — small enough that the initial logits are nearly uniform,
-which is why training starts near $\log V$.
+We start by mapping a token and a position (relative to a block), both integers, into a vector in our "hub space", a vector space of dimension `n_embd`. These two mappings are stored as a `n_embd` row per id.
 
-Three matrices exist per model:
 
-- **`wte`** — one row per vocabulary entry, the token's learned vector.
-- **`wpe`** — one row per position, the position's learned vector.
-- **`lm_head`** — one row per vocabulary entry, turning a vector back into logits.
 
-and six more per layer: four for attention (`wq`, `wk`, `wv`, `wo`) and two for the
-MLP, which widens to `4 * n_embd` and back. That `4` is inherited from GPT-2 and is
-where most of the parameters live.
-
-`head_dim` is set here because it is derived, not chosen: the width is split evenly
-across heads, so `n_embd` must divide by `n_head`.
-
-```{code-cell} ipython3
-def init_params(config, seed=None):
-    """Initialise a fresh set of weights in `config`, in place."""
-    random.seed(seed)
-    config['head_dim'] = config['n_embd'] // config['n_head']    # derived dimension of each head
-
-    # Initialize the parameters, to store the knowledge of the model
-    n_embd, vocab_size, block_size = config['n_embd'], config['vocab_size'], config['block_size']
-
-    matrix = lambda nout, nin, std=0.08: [[Value(random.gauss(0, std)) for _ in range(nin)] for _ in range(nout)]
-
-    state_dict = {'wte': matrix(vocab_size, n_embd), 'wpe': matrix(block_size, n_embd), 'lm_head': matrix(vocab_size, n_embd)}
-    for i in range(config['n_layer']):
-        state_dict[f'layer{i}.attn_wq'] = matrix(n_embd, n_embd)
-        state_dict[f'layer{i}.attn_wk'] = matrix(n_embd, n_embd)
-        state_dict[f'layer{i}.attn_wv'] = matrix(n_embd, n_embd)
-        state_dict[f'layer{i}.attn_wo'] = matrix(n_embd, n_embd)
-        state_dict[f'layer{i}.mlp_fc1'] = matrix(4 * n_embd, n_embd)
-        state_dict[f'layer{i}.mlp_fc2'] = matrix(n_embd, 4 * n_embd)
-    config['state_dict'] = state_dict
-    return config
-```
-
-## 4.4 Entering the model: embeddings — lines 107–114
-
-A token id is an integer; the model needs a vector. `wte[token_id]` is that vector,
-looked up rather than computed — a row of a matrix that gradient descent is free to
-move.
-
-Position enters the same way, and the two are simply **added**:
+Then these two hub vectors are simply **added** to yeild $x$, the embedded Vector for this (token, position) pair:
 
 $$
 x \;=\; \mathrm{wte}[\,t\,] \;+\; \mathrm{wpe}[\,p\,]
 $$
+and then Root Mean Square normalize it.
+
+Notes:
 
 Addition rather than concatenation means "which token" and "where" share the same
 $d$ channels and the model has to learn to disentangle them. Without `wpe` the
@@ -150,57 +115,8 @@ def gpt(config, token_id, pos_id, keys, values):
     x = rmsnorm(x) # note: not redundant due to backward pass via the residual connection
 ```
 
-## 4.5 The layer loop and the residual stream — lines 116–119
-
-`x_residual = x` before each sub-block, and `x = [a + b for a, b in zip(x, x_residual)]`
-after it. The pattern appears twice per layer, around attention and around the MLP:
-
-$$
-x \;\leftarrow\; x \;+\; \mathrm{sublayer}(\mathrm{rmsnorm}(x))
-$$
-
-Two consequences. The sub-block learns a *correction* to `x` rather than a
-replacement, so a freshly initialised layer that outputs near-zero is close to the
-identity and does no harm. And in the backward pass the `+` sends gradient down
-both branches unchanged, so the path from the loss to the embeddings stays short no
-matter how many layers are stacked.
-
-Normalising *inside* the branch and adding the un-normalised `x` back is the
-pre-norm arrangement.
-
-```{code-cell} ipython3
-for li in range(n_layer):
-    # 1) Multi-head Attention block
-    x_residual = x
-    x = rmsnorm(x)
-```
-
-## 4.6 The MLP block — lines 137–143
-
-Attention has finished; this is the other half. Widen to `4 * n_embd`, apply ReLU,
-project back:
-
-$$
-\mathrm{MLP}(x) \;=\; W_2 \,\max(0,\, W_1 x)
-$$
-
-GPT-2 uses GeLU; this uses ReLU, which `Value` already has. It is the only
-nonlinearity in the model — everything else is linear or a normalisation, and a
-stack of linear maps would collapse into one.
-
-This block is where the model does its per-position work: attention gathers
-information from other positions, and the MLP is what processes what was gathered.
-It holds roughly two thirds of the parameters.
-
-```{code-cell} ipython3
-# 2) MLP block
-x_residual = x
-x = rmsnorm(x)
-x = linear(x, state_dict[f'layer{li}.mlp_fc1'])
-x = [xi.relu() for xi in x]
-x = linear(x, state_dict[f'layer{li}.mlp_fc2'])
-x = [a + b for a, b in zip(x, x_residual)]
-```
+Now that we have `x` we'll apply the "Forward Pass" to modify it (in place) in the hub space.
+When we're done with that, we'll simply need to map back to the token space:
 
 ## 4.7 The output head — lines 145–146
 
@@ -223,6 +139,8 @@ Not from the source. Every section above described a matrix and asked you to acc
 that these matrices *are* the model's knowledge. At the default size that is an
 assertion — 4,192 numbers is not something you can look at. So shrink the model
 until it is.
+
+TODO: just read a simple, likely untrained model here. We just want to show the embedding...
 
 `n_embd=2, n_head=1, block_size=4` over a three-letter alphabet gives **72
 parameters**, every one of which fits on screen. `seed=` fixes the initialisation
@@ -274,6 +192,59 @@ for name, mat in config['state_dict'].items():
     print(f"\n{name}")
     for row in mat:
         print("   ", "  ".join(f"{p.data:+.4f}" for p in row))
+```
+
+## 4.3 Initialising the Model — lines 84–105
+
+Every weight in the model, created here and updated in `train()`. This is also where we start to see the shape and flow of the model itself, so we'll talk a bit about what these matrices are. We start with three model level matrices providing the Embedding itself. 
+
+### Embedding
+We embed vectors in two spaces - `token` and `position-in-block` - into a common `hub space` of dimension `n_embd`, then back to tokens.
+
+#### Map Token Embedding ("mte")
+Map a token_id in our vacabulary (<= vacab_size) to a vector in our "Hub Space" - weights across `n_embd` logits. One row for each token_id, each row has `n_embd` weights, so a `vocab_size x n_embd` matrix.
+
+#### Map Position Embedding ("mpe")
+Map a position in a block (<= block_size) to a vector in our "Hub Space" - weights across `n_embd` logits. One row for each position_id, each row has `n_embd` weights, so a `block_length x n_embd` matrix.
+
+#### Language Model Head ("lm_head")
+Map an embedded_vecotr in our `hub space` back to a vector of logits in vocabulary space. `n_embd x vocab_size`
+
+### Attention
+
+and six more per layer: four for attention (`wq`, `wk`, `wv`, `wo`) and 
+
+### Multiple Layer Perceptron ("MLP")
+MLP which widens to `4 * n_embd` and back. That `4` is inherited from GPT-2 and is
+where most of the parameters live.
+
+`head_dim` is set here because it is derived, not chosen: the width is split evenly
+across heads, so `n_embd` must divide by `n_head`.
+
+We initialize `a priori` with Gaussian noise at `std=0.08` — small enough that the initial logits are nearly uniform,
+which is why training starts near $\log V$.
+
+```{code-cell} ipython3
+def init_params(config, seed=None):
+    """Initialise a fresh set of weights in `config`, in place."""
+    random.seed(seed)
+    config['head_dim'] = config['n_embd'] // config['n_head']    # derived dimension of each head
+
+    # Initialize the parameters, to store the knowledge of the model
+    n_embd, vocab_size, block_size = config['n_embd'], config['vocab_size'], config['block_size']
+
+    matrix = lambda nout, nin, std=0.08: [[Value(random.gauss(0, std)) for _ in range(nin)] for _ in range(nout)]
+
+    state_dict = {'wte': matrix(vocab_size, n_embd), 'wpe': matrix(block_size, n_embd), 'lm_head': matrix(vocab_size, n_embd)}
+    for i in range(config['n_layer']):
+        state_dict[f'layer{i}.attn_wq'] = matrix(n_embd, n_embd)
+        state_dict[f'layer{i}.attn_wk'] = matrix(n_embd, n_embd)
+        state_dict[f'layer{i}.attn_wv'] = matrix(n_embd, n_embd)
+        state_dict[f'layer{i}.attn_wo'] = matrix(n_embd, n_embd)
+        state_dict[f'layer{i}.mlp_fc1'] = matrix(4 * n_embd, n_embd)
+        state_dict[f'layer{i}.mlp_fc2'] = matrix(n_embd, 4 * n_embd)
+    config['state_dict'] = state_dict
+    return config
 ```
 
 ```{code-cell} ipython3

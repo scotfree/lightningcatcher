@@ -13,23 +13,92 @@ kernelspec:
 
 +++ {"editable": true, "slideshow": {"slide_type": ""}}
 
-# 05 — GP Transform: Attention
+# 05 — GP Transform: Making a Residual with Attention and Neural Nets
+Having embedded our (token, position) into hub space we move to a new point in hub space by generating "residuals" using attention and MLP. These residuals are simply other vectors in the hub space we will add, making an iterative process across hub space with these updates.
 
-Covers `karpathy.py` lines 120–136: seventeen lines in the middle of `gpt`, and the
+
+
+We will apply a stack of GPT layers (only one in the default Karpathy setup). Each of these layers is structurally identical, just trained to different weights, and will:
+1. Attention: Build the context (tokens at other positions in the block), one context vector for each Attention Head
+2. Map these context vectors back to a single vector in the hub space.
+3. MLP: Apply a two layer Multi Layer Perceptron to this new contextual hub vector, feturning another hub vector called the `residual`.
+4. Update the current hub vector with the residual.
+
+** Notes **
+* Covers `karpathy.py` lines 120–136: seventeen lines in the middle of `gpt`, and the
 only place in the entire model where information moves between positions.
 
-Everything in notebook 04 acted on one position's vector in isolation — `linear`,
+* Everything in notebook 04 acted on one position's vector in isolation — `linear`,
 `rmsnorm`, the MLP, the embedding lookup, the output head. Run the model on a
 single token and none of them behave differently. That is the test worth applying
 here: attention is the one operation that fails it.
 
-`softmax` was covered in notebook 01, lines 75–79. It reappears on line 132 doing a
+* `softmax` was covered in notebook 01, lines 75–79. It reappears on line 132 doing a
 different job — normalising over *positions* rather than over the vocabulary.
 
-Code cells reproduce the source verbatim, dedented where a fragment sits inside a
+* Code cells reproduce the source verbatim, dedented where a fragment sits inside a
 function. Anything that is *not* from the source is marked as such.
 
+
+* Note that in reality we're not really in a vector space I think. If we map a probability distribution to logits in hub space, then add it to itself, when we scale back to a probability distribution we end up exactly where it started. Each dist acts as an identity under addition. Something to describe more carefully there.
+
 +++
+
+## 4.5 The layer loop and the residual stream — lines 116–119
+
+TODO: I think this may belong in the next section - we don't actually do anything here, just start the block at x and norm it.
+
+`x_residual = x` before each sub-block, and `x = [a + b for a, b in zip(x, x_residual)]`
+after it. The pattern appears twice per layer, around attention and around the MLP:
+
+$$
+x \;\leftarrow\; x \;+\; \mathrm{sublayer}(\mathrm{rmsnorm}(x))
+$$
+
+Two consequences. The sub-block learns a *correction* to `x` rather than a
+replacement, so a freshly initialised layer that outputs near-zero is close to the
+identity and does no harm. And in the backward pass the `+` sends gradient down
+both branches unchanged, so the path from the loss to the embeddings stays short no
+matter how many layers are stacked.
+
+Normalising *inside* the branch and adding the un-normalised `x` back is the
+pre-norm arrangement.
+
+```{code-cell} ipython3
+for li in range(n_layer):
+    # 1) Multi-head Attention block
+    x_residual = x
+    x = rmsnorm(x)
+```
+
+## 4.6 The MLP block — lines 137–143
+
+Attention has finished; this is the other half. Widen to `4 * n_embd`, apply ReLU,
+project back:
+
+$$
+\mathrm{MLP}(x) \;=\; W_2 \,\max(0,\, W_1 x)
+$$
+
+GPT-2 uses GeLU; this uses ReLU, which `Value` already has. It is the only
+nonlinearity in the model — everything else is linear or a normalisation, and a
+stack of linear maps would collapse into one.
+
+This block is where the model does its per-position work: attention gathers
+information from other positions, and the MLP is what processes what was gathered.
+It holds roughly two thirds of the parameters.
+
+```{code-cell} ipython3
+# 2) MLP block
+x_residual = x
+x = rmsnorm(x)
+x = linear(x, state_dict[f'layer{li}.mlp_fc1'])
+x = [xi.relu() for xi in x]
+x = linear(x, state_dict[f'layer{li}.mlp_fc2'])
+x = [a + b for a, b in zip(x, x_residual)]
+```
+
++++ {"jp-MarkdownHeadingCollapsed": true}
 
 ## 5.1 Queries, keys and values — lines 120–122
 
