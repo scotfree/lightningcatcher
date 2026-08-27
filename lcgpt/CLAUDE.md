@@ -48,6 +48,13 @@ describing what a specific cell does, nothing more. No narrative voice.
   is the authority. `data/beatles_first3.txt` is gitignored and regenerated locally
   via `get_lcgpt_corpus.py`. It was committed and pushed public once, on
   2026-08-18, and removed by a full history rewrite the same day.
+- **Nor are notebook *outputs* derived from it.** A 22,912-parameter model trained
+  on 1,077 lines reproduces some of them verbatim — notebook 06 §6.2 demonstrates
+  it deliberately. Cells that train on or sample from the lyrics are tagged
+  `beatles-output`, and **`python tools/strip_beatles_outputs.py` must be run
+  before staging** any notebook executed against that corpus. Saved model JSON is
+  covered too: `uchars` is the literal corpus vocabulary, and `.gitignore` catches
+  it only under `model*.json`. (Decided 2026-08-26.)
 - **The code is split: `karpathy.py` is the algorithm, `lcgpt.py` is everything
   else** (corpus files, save/load, argparse). The notebooks discuss `karpathy.py`
   only. Corpus plumbing therefore dropped out of notebook 01, which is now
@@ -81,6 +88,12 @@ describing what a specific cell does, nothing more. No narrative voice.
   `--num-docs` is not a speed lever. An earlier figure of 185s in this file was
   a single unreproducible measurement, corrected 2026-08-18 against repeated
   runs at 200, 400 and 1000 steps.
+- **That 63s figure is letter-level `names.txt` only and does not generalise.**
+  Word-level on `data/beatles_first3.txt` (612 vocab, 22,912 params) runs at
+  ~0.7 s/step — 1000 steps is 12–25 min, not 63s. Cost is driven by the
+  vocabulary-sized softmax and `lm_head` at every position, so it scales with
+  `vocab_size`, not just step count. Notebook 06 trains 200 steps (~2–3 min) for
+  this reason. Measured 2026-08-26; not a regression.
 
 ## Node structure (design doc §5)
 
@@ -96,7 +109,18 @@ first notebook:
 4. **GPT** (`04_the_gpt`) — embeddings, MLP, residual stream, output head.
 5. **Attention** (`05_attention`) — lines 120–136, the interior of `gpt`.
 
-Follow-ups: fine-tuning, deployment, entropy/Markov.
+6. **Applications** (`06_applications_and_next_steps`) — added 2026-08-26. Quotes
+   no new source; lines 1–279 are already fully covered by 01–05. Five demo-only
+   sections: word-level training on the Beatles corpus (§6.1), prompting via
+   prefill (§6.2), the training-parallelises/generation-does-not argument (§6.3),
+   a dimensional census of every matrix and vector (§6.4), and the same
+   architecture at GPT-2/GPT-3 scale (§6.5). **The 01–05 invariants — every
+   section exactly two cells, every source line covered once — do not apply to
+   06.** Conversely, 06 is the one notebook where "Run All" *must* be clean,
+   because it has no verbatim source fragments.
+
+Follow-ups: fine-tuning, deployment, entropy/Markov. Still separate nodes (07+);
+§6.5 closes by pointing at them.
 
 The reason for the order: each notebook establishes the interface
 `(config, token_id, pos_id, keys, values) -> logits` and then a later one gives a
@@ -111,6 +135,16 @@ was being referred to from every other notebook. Notebook 01 still treats it as 
 unopened box; notebook 02 opens it. (Decided 2026-08-23.)
 
 The old forward-order notebooks are in `notebooks/archive/pre-reorder/`.
+
+## State as of 2026-08-26
+
+Notebook 06 added — see the node structure above. It is demo-only and holds four
+more runnable demos: word-level Beatles training (§6.1), prompting by prefill
+(§6.2), the parallel forward/backward pass (§6.3), and the to-scale matrix shapes
+figure (§6.4), plus a parameter-count table (§6.5) that asserts GPT-2 small's
+published 124,318,464 as a regression check on `init_params`' shapes. §6.4 is the
+second cell to use the §2.6 palette. Everything below this paragraph describes
+01–05 and still holds.
 
 ## State as of 2026-08-23
 
@@ -178,10 +212,13 @@ with the path injected from outside the cell.
 6. **Bare `python lcgpt.py`** dies with a raw `FileNotFoundError: model.json`
    rather than an argparse usage message. Deliberate that args are required, but
    `--model` still carries a default, which is what makes the message unhelpful.
-7. **No word-level demo exists.** The old placeholder section was dropped in the
-   reorder rather than carried over. The mechanism exists and is measured
-   (61 → 612 vocabulary on the Beatles corpus) and `doc_to_tokens` is covered in
-   §3.1; the demo's framing, corpus and scope are still not designed.
+7. ~~**No word-level demo exists.**~~ **Done 2026-08-26.** Notebook 06 §6.1 trains
+   word-level on the Beatles corpus (612 vocab, 22,912 params) and §6.2 prompts it.
+   Two findings worth keeping: **more training makes it worse** — by 400 steps the
+   model collapses onto short high-frequency lines (`and i`, `i do`) while the loss
+   keeps falling, so 200 steps is the sweet spot; and **it memorises** — prompted
+   with `"it's been a hard"` it returns `"day's night"` every time. The second is
+   why issue 11 exists.
 8. **The lyrics blob is still fetchable from GitHub by SHA.** History was rewritten
    and force-pushed 2026-08-18, and the file 404s at HEAD, but commit
    `f2a75cd99d5b93a57bd3a1743a38907ac8202492` still resolves via the API. GitHub
@@ -195,3 +232,11 @@ with the path injected from outside the cell.
 10. **Dead code in `karpathy.py`**, left deliberately: the leftover section-label
    block at lines 281–293, and `#settings = dict(TRAIN_DEFAULTS)` at line 187
    referring to a name that does not exist.
+11. **Output stripping is manual and unenforced.** `tools/strip_beatles_outputs.py`
+   clears cells tagged `beatles-output`, but nothing runs it automatically — a
+   pre-commit hook would close the gap. Until then it is a step to remember, which
+   is the same class of mistake that leaked the corpus on 2026-08-18.
+12. **`generate_prompted` lives only in notebook 06 §6.2.** Prompting is ~6 lines
+   over `generate`, but putting it in `karpathy.py` would shift every line number
+   and break 56 references across 01–05. If prefill is ever wanted from the CLI it
+   belongs in `lcgpt.py`, not the anchor.
