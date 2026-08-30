@@ -32,14 +32,27 @@ user-level, so it also shows up in any other Jupyter server on this machine.
 ## jupytext
 
 `jupytext.toml` pairs each `.ipynb` with a `.md` (MyST) mirror alongside it.
-The pairing happens automatically on save when the notebook is served from this
-venv. To sync by hand:
+
+**The notebook is the source of truth. The `.md` is generated.** Edit `.ipynb`
+files in Jupyter; never edit a `.md` by hand. The pre-commit hook regenerates the
+mirror from the notebook whenever one is staged, so the two cannot drift.
+
+Install the hook once per clone:
 
 ```sh
-.venv/bin/jupytext --sync notebooks/*.ipynb
+git config core.hooksPath lcgpt/tools/githooks
 ```
 
-Commit both files. Review diffs on the `.md`.
+The mirror exists for legible diffs: re-running a notebook rewrites the whole
+`.ipynb`, while the `.md` changes only when the code or prose does. Review diffs
+on the `.md`; commit both files (the hook stages the mirror for you).
+
+**Do not run `jupytext --sync`.** It chooses a direction by file mtime and can
+overwrite a notebook from a stale mirror. To regenerate by hand:
+
+```sh
+.venv/bin/jupytext --to md:myst notebooks/<name>.ipynb
+```
 
 ## Data
 

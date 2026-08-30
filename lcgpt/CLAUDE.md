@@ -35,9 +35,18 @@ describing what a specific cell does, nothing more. No narrative voice.
   readable text diff. matplotlib for anything data-driven (attention heatmaps,
   loss curves). Caveat: mermaid does *not* render in plain `nbconvert` HTML
   export without extra JS — relevant if notebooks get published as static HTML.
-- **jupytext pairing** to `md:myst` alongside each `.ipynb` (`jupytext.toml`).
-  Reason: prose and LaTeX stay real markdown, so diffs are legible and cells can
-  be pasted into the chat surface verbatim.
+- **The `.ipynb` is the source of truth; the `.md` mirror is generated.**
+  Notebooks are edited directly in Jupyter. The `md:myst` mirror beside each one
+  (`jupytext.toml`) is regenerated **one-directionally** by the pre-commit hook and
+  is never hand-edited, so it cannot drift and cannot win a sync. Its job is legible
+  diffs: code and prose changes show up there without the output churn that rewrites
+  the whole `.ipynb` every time a cell runs, which makes the `.md` history a readable
+  timeline of how a notebook evolved. Cells also paste into the chat surface verbatim.
+  It is **not** a publishing format — nbconvert goes `.ipynb` → HTML/PDF directly.
+  (Bidirectional `jupytext --sync` was the old arrangement; it silently dropped four
+  paragraphs from notebook 02's mirror, found and repaired 2026-08-30.
+  **Do not run `--sync`** — it picks a direction by mtime and can overwrite the
+  notebook from a stale mirror.)
 - **Word-level tokenizing now exists in the CLI** (`--token-type word`), which is
   the mechanism the design doc §6.3 demo needs. Measured on
   `data/beatles_first3.txt`: 612-token vocabulary, 22,912 parameters, and the
@@ -232,10 +241,13 @@ with the path injected from outside the cell.
 10. **Dead code in `karpathy.py`**, left deliberately: the leftover section-label
    block at lines 281–293, and `#settings = dict(TRAIN_DEFAULTS)` at line 187
    referring to a name that does not exist.
-11. **Output stripping is manual and unenforced.** `tools/strip_beatles_outputs.py`
-   clears cells tagged `beatles-output`, but nothing runs it automatically — a
-   pre-commit hook would close the gap. Until then it is a step to remember, which
-   is the same class of mistake that leaked the corpus on 2026-08-18.
+11. ~~**Output stripping is manual and unenforced.**~~ **Done 2026-08-30.**
+   `tools/githooks/pre-commit` runs `strip_beatles_outputs.py` and regenerates the
+   `.md` mirror for every staged notebook. Install once per clone with
+   `git config core.hooksPath lcgpt/tools/githooks` — the setting is local config,
+   so a fresh clone does not inherit it. The hook refuses a partly-staged notebook
+   rather than sweeping the unstaged half into the commit, and `--no-verify`
+   bypasses both jobs.
 12. **`generate_prompted` lives only in notebook 06 §6.2.** Prompting is ~6 lines
    over `generate`, but putting it in `karpathy.py` would shift every line number
    and break 56 references across 01–05. If prefill is ever wanted from the CLI it

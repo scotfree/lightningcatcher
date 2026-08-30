@@ -1,0 +1,59 @@
+#!/bin/sh
+# pre-commit -- keep the notebook mirrors honest.
+#
+# For every staged notebook under lcgpt/notebooks/:
+#
+#   1. Clear the outputs of cells tagged `beatles-output`. The lyrics corpus is
+#      copyrighted, is never committed, and the model trained on it reproduces
+#      lines verbatim -- notebook 06 6.2 demonstrates that deliberately.
+#      See CLAUDE.md and data_attributions.md.
+#
+#   2. Regenerate the .md mirror from the .ipynb. The notebook is the source of
+#      truth; the mirror is generated, never hand-edited, and never syncs back.
+#      Its job is legible diffs -- code and prose changes show up there without
+#      the output churn that rewrites the .ipynb every time a cell is run.
+#
+# Install once per clone:
+#
+#     git config core.hooksPath lcgpt/tools/githooks
+#
+# Bypass for a single commit with `git commit --no-verify` (which also skips the
+# output stripping -- check `git diff --cached` yourself if you do).
+
+set -e
+
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+
+py="lcgpt/.venv/bin/python"
+jupytext="lcgpt/.venv/bin/jupytext"
+stripper="lcgpt/tools/strip_beatles_outputs.py"
+
+staged=$(git diff --cached --name-only --diff-filter=ACM \
+         | grep '^lcgpt/notebooks/[^/]*\.ipynb$' || true)
+[ -n "$staged" ] || exit 0
+
+for tool in "$py" "$jupytext"; do
+    [ -x "$tool" ] || {
+        echo "pre-commit: $tool not found -- is the venv built?" >&2
+        exit 1
+    }
+done
+
+for nb in $staged; do
+    # This hook rewrites the whole file, so a partly-staged notebook would get
+    # its unstaged half swept into the commit. Refuse rather than surprise.
+    if ! git diff --quiet -- "$nb"; then
+        echo "pre-commit: $nb has unstaged changes as well as staged ones." >&2
+        echo "            This hook rewrites the whole file. Stage it fully," >&2
+        echo "            or stash the rest, then commit again." >&2
+        exit 1
+    fi
+
+    "$py" "$stripper" "$nb" > /dev/null
+    "$jupytext" --to md:myst "$nb" > /dev/null 2>&1
+
+    md="${nb%.ipynb}.md"
+    git add "$nb" "$md"
+    echo "pre-commit: $(basename "$nb") -- outputs checked, $(basename "$md") regenerated"
+done
