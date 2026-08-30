@@ -35,6 +35,11 @@ class. Anything that is *not* from the source is marked as such.
 
 ## 2.1 The `Value` node — lines 19–26
 
+It's worth calling out what this is doing for us. We're keeping track of a value  __And its derivative__ and updating both together when we do things like multiply it by a scalar or exponentiate. This is "autodifferentiation": we get exact derivatives at the end without doing symbolic differentiation or numerical estimation. As long as we can build our algorithm out of the operations we overload for Value, at the end we'll have derivatives available.
+
+Specifically, the "forward pass" will walk through all the computations involved in actually updating our model one time given its current state. Then, a backward pass can perform a gradient descent step and update based on the derivates we have for free after the forward step, and this step doesn't need to know anything about the model!
+
+This happens in our overloads for the basic addition and multiplication operations, and for exponentiation and xam operations. This means any math we buidl with these will provide derivatives for free. Notice we return a new Value with the local_grads set in the operation.
 Not a number — a node in a graph. Four fields: the scalar itself, a gradient slot
 that starts at zero, the nodes this one was computed from, and the derivative of
 this node with respect to each of them.
@@ -151,6 +156,7 @@ def relu(self): return Value(max(0, self.data), (self,), (float(self.data > 0),)
 
 ## 2.5 `backward()` — lines 48–61
 
+This is a big deal. We're going to build gradient descent to run on our network of these Value nodes, more-or-less independent of the model. 
 Two phases.
 
 **Topological sort.** A depth-first walk from the root, appending each node *after*
