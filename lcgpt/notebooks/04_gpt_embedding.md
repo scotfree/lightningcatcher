@@ -37,7 +37,6 @@ knows there is a sequence.
 * Covers `karpathy.py` lines 70–73, 81–105 and 107–146 minus the attention interior:
 the model that has been standing in as `logit_model` for two notebooks.
 
-
 +++ {"editable": true, "slideshow": {"slide_type": ""}}
 
 ## 4.1 `linear` — lines 81–82
@@ -246,6 +245,152 @@ def init_params(config, seed=None):
     config['state_dict'] = state_dict
     return config
 ```
+
+## 4.9 The embedding on its own
+
+Not from the source. §4.8 shrank the model until its weights fit on screen. This one
+removes the model and keeps only the embedding: no attention, no MLP, `n_layer=0`,
+and no training at all — every number is set by hand.
+
+`logit_model=` is what makes that possible. `train` and `generate` accept any
+function with the signature `(config, token_id, pos_id, keys, values) -> logits`, so
+`gpt` can be replaced by the two steps that matter here:
+
+$$
+x \;=\; \mathrm{mte}[t] \,+\, \mathrm{mpe}[p]
+\qquad\qquad
+\text{logits} \;=\; \mathrm{lm\_head}\;x \;+\; \beta
+$$
+
+Look up, add, project back. `keys` and `values` are accepted and ignored — there is
+no attention to cache for. `mpe` is zeros throughout, so position plays no part; the
+whole model is "which token am I", nothing else.
+
+### Four tokens, one dimension
+
+Put `A`, `B`, `C`, `D` at $1, 2, 3, 4$ on a single axis. Four distinct points on a
+line, and the read-out sends each one to the next: the model generates `ABCDABCD`.
+
+The read-out is worth looking at closely. Each token's logit is a straight line in
+$x$:
+
+$$
+\text{logits}_i(x) \;=\; m_i\,x + \beta_i
+$$
+
+so the prediction — the argmax — is the **upper envelope** of five straight lines.
+An upper envelope of $V$ lines can have up to $V$ segments, and here the winner
+changes at $x = 1.5,\ 2.5,\ 3.5$: `B` owns the stretch containing `A`'s point, `C`
+owns `B`'s, and so on around the cycle. `BOS` shares `D`'s point so the first step
+predicts `A`, and its line sits below everything so it can never win — otherwise
+sampling would stop at once, which is what line 269 does when `BOS` comes up.
+
+### What the bias is doing
+
+Drop $\beta$ and the same four-cycle becomes impossible in one dimension — which is
+worth stating carefully, because the embedding is not where it fails.
+
+Placing four tokens at distinct points on a line is fine. The map
+$x \mapsto \mathrm{lm\_head}\,x$ into logit space is injective too, so no information
+is lost. What fails is the **argmax on top of it**. Without a bias the reachable
+logit vectors are $\{x \cdot \mathrm{lm\_head} : x \in \mathbb{R}\}$ — a line through
+the *origin*. Multiplying by a positive $x$ scales every coordinate by the same
+factor and cannot change which is largest; a negative $x$ reverses the order, once.
+So over all $x$, and for any weights, the argmax takes exactly **two** values: the
+largest entry of `lm_head` and the smallest.
+
+Adding $\beta$ lifts that line off the origin, and an affine line through logit space
+can cross as many argmax regions as there are tokens. That is the whole difference.
+
+`karpathy.py` has no bias — `linear` on line 81 is a bare dot product, and GPT-2's
+output head has no bias either. So for the model in this notebook the constraint is
+real, and the way out is a second channel rather than an intercept.
+
+### Bias-free, in two dimensions
+
+With two channels the tokens fit on the unit circle, 90° apart. Give each token's
+`lm_head` row its *predecessor's* vector; then
+
+$$
+\langle \mathrm{lm\_head}_i,\; x_t \rangle \;=\; \cos\!\big(\theta_{i-1} - \theta_t\big)
+$$
+
+which is largest exactly when token $i$ follows token $t$. The whole model is a 90°
+rotation, it uses no bias, and it generates the same `ABCDABCD`.
+
+The general statement behind both halves: $x \mapsto \mathrm{lm\_head}\,x$ has rank at
+most `n_embd`, so the reachable logits lie in an `n_embd`-dimensional subspace of the
+`vocab_size`-dimensional logit space. This is the **softmax bottleneck**, and it is
+one concrete thing `n_embd` buys — not "capacity" vaguely, but directions the output
+head can tell apart.
+
+`temperature=0.01` makes sampling effectively an argmax, so the printed strings show
+what the weights say rather than what the sampler happened to draw.
+
+```{code-cell} ipython3
+# Not from the source: the embedding machinery on its own, every weight set by hand.
+import sys; sys.path.insert(0, '..')   # karpathy.py lives one level up
+import karpathy
+from karpathy import Value
+
+def embedding_only(vocab, mte, lm_head, bias=None, block_size=8):
+    """A config carrying nothing but the embedding matrices. No layers, no training."""
+    n_embd = len(mte[0])
+    config = dict(n_layer=0, n_embd=n_embd, n_head=1, head_dim=n_embd,
+                  block_size=block_size, token_type='letter',
+                  uchars=list(vocab), vocab_size=len(vocab) + 1, BOS=len(vocab))
+    config['state_dict'] = {
+        'wte':     [[Value(v) for v in row] for row in mte],
+        'wpe':     [[Value(0.0) for _ in range(n_embd)] for _ in range(block_size)],  # unused
+        'lm_head': [[Value(v) for v in row] for row in lm_head],
+    }
+    # karpathy.py's `linear` has no bias term; this is the demo's own addition.
+    config['lm_head_bias'] = [Value(b) for b in (bias or [0.0] * (len(vocab) + 1))]
+    return config
+
+def embed_only(config, token_id, pos_id, keys, values):
+    """A `logit_model` with no transformer in it: look up, add position, read out."""
+    sd = config['state_dict']
+    x = [t + p for t, p in zip(sd['wte'][token_id], sd['wpe'][pos_id])]     # lines 111-113
+    return [sum(w * xi for w, xi in zip(row, x)) + b                       # line 145, plus bias
+            for row, b in zip(sd['lm_head'], config['lm_head_bias'])]
+
+def show(config, title):
+    names = config['uchars'] + ['BOS']
+    fmt = lambda row: "(" + ", ".join(f"{p.data:+g}" for p in row) + ")"
+    print(f"{title}    n_embd={config['n_embd']}")
+    for key in ('wte', 'lm_head'):
+        print(f"   {key:8s} " + "  ".join(f"{n}:{fmt(r)}"
+              for n, r in zip(names, config['state_dict'][key])))
+    if any(b.data for b in config['lm_head_bias']):
+        print("   bias     " + "  ".join(f"{n}:{b.data:+g}"
+              for n, b in zip(names, config['lm_head_bias'])))
+    out = karpathy.generate(config, num_samples=1, temperature=0.01, seed=1,
+                            verbose=False, logit_model=embed_only)
+    print(f"   generates {out[0]}\n")
+
+# One dimension, four tokens. A B C D sit at 1 2 3 4 on the line. Each token's logit
+# is a straight line in x; the winner is the upper envelope, switching at 1.5/2.5/3.5.
+show(embedding_only('ABCD',
+                    mte     = [[1.], [2.], [3.], [4.], [4.]],   # BOS shares D's point, so BOS -> A
+                    lm_head = [[4.], [1.], [2.], [3.], [0.]],   # slopes
+                    bias    = [-7.5, 0., -1.5, -4., -9.]),      # intercepts; BOS can never win
+     "1-D, four tokens (affine head)")
+
+# Two dimensions, no bias. The same cycle needs a second channel: put the tokens 90
+# degrees apart and make each lm_head row its predecessor, so the dot product peaks
+# on the successor.
+ring = [(1., 0.), (0., 1.), (-1., 0.), (0., -1.)]               # A B C D
+show(embedding_only('ABCD',
+                    mte     = [list(ring[i])           for i in range(4)] + [[0., -1.]],
+                    lm_head = [list(ring[(i - 1) % 4]) for i in range(4)] + [[0., 0.]]),
+     "2-D, four tokens (no bias)")
+```
+
+Neither model was trained. The matrices were chosen to make a point, which is the
+opposite of what §4.8 does — but it is the same machinery, and `generate` cannot tell
+the difference. What training buys is not the mechanism; it is the arithmetic of
+finding numbers like these when nobody knows what they should be.
 
 ```{code-cell} ipython3
 ---
