@@ -13,129 +13,19 @@ kernelspec:
 
 +++ {"editable": true, "slideshow": {"slide_type": ""}}
 
-# 03 — Input
+# 03 — Training
 
-Now let's talk about creating and training the models we used above to generate text. We'll input a body of text (the `corpus`) and some configuration, then train a model in increasingly interesting ways.
 
-Along the way the `Value` objects of notebook 02 come into their own. Here they stop being
+
+Now the `Value` objects of notebook 02 come into their own. Here they stop being
 an isolated demonstration: the forward pass below builds one graph out of them per document,
 all the way to the loss, and `backward()` fills in a gradient for every parameter.
 
-Covers `karpathy.py` lines 148–242, the *Machine Learning - Input* section, plus
-`CONFIG_DEFAULTS` at lines 5–17: turning a pile of documents into tokens, and
-turning tokens into weights.
+We'll use Value to build simple Gradient Descent, then add the slight optimization Kaparthy applies to end up with the `train()` function used for the full GPT model. First we'll use it on some simple examples.
 
-Notebook 01 sampled from a model that was handed to it. This one builds the two
-things that model needed — a vocabulary, and a training loop that moves parameters
-downhill. The loop is written against `logit_model`, exactly as `generate` was, so
-the last section trains something you can print in full.
+_Notes_
 
-Code cells reproduce the source verbatim, dedented where a fragment sits inside a
-function. Anything that is *not* from the source is marked as such.
-
-+++
-
-## 3.1 Splitting a document into tokens — lines 149–154
-
-A *token* is whatever unit the model treats as indivisible. Two choices here:
-
-- **`letter`** — one character per token. `list(doc)` and nothing more.
-- **`word`** — whitespace-separated, lowercased, with the curly apostrophe folded
-  onto the straight one and punctuation trimmed off each end, so that `"Yeah,"`,
-  `"yeah"` and `"yeah!"` collapse to a single token rather than three.
-
-The choice changes only how many distinct tokens exist. Nothing downstream can
-tell the difference.
-
-```{code-cell} ipython3
-def doc_to_tokens(doc, token_type):
-    if token_type == 'letter':
-        return list(doc)
-    WORD_TRIM = '!"\'(),-.?—'
-    cleaned = (w.strip(WORD_TRIM) for w in doc.lower().replace('’', "'").split())
-    return [w for w in cleaned if w]
-```
-
-## 3.2 The default configuration — lines 5–17
-
-Every dimension of the model, in one dict. `n_embd` is the width of a token's
-vector, `n_layer` the number of stacked blocks, `block_size` the furthest back
-attention can look, and `n_head` how many independent attention channels split
-that width. The remaining four are the optimiser's.
-
-`block_size=16` is not arbitrary: the longest name in `data/names.txt` is 15
-characters, plus one `BOS`.
-
-```{code-cell} ipython3
-CONFIG_DEFAULTS = {
-    'n_layer': 1,     # depth of the transformer neural network (number of layers)
-    'n_embd': 16,     # width of the network (embedding dimension)
-    'block_size': 16, # maximum context length of the attention window
-    'n_head': 4,      # number of attention heads
-    'token_type': 'letter',
-    'learning_rate': 0.01, 
-    'beta1': 0.85, 
-    'beta2': 0.99, 
-    'eps_adam': 1e-8
-}
-```
-
-## 3.3 Building the vocabulary — lines 156–165
-
-Every distinct token in the corpus, sorted, becomes an integer id. Sorting matters
-— it makes the mapping reproducible across runs, which is why a saved model can
-ship its `uchars` and get the same ids back.
-
-`BOS` takes the one id past the end. It is a real token to the model, and it does
-double duty: it starts every sequence and it ends every sequence, so "the document
-is finished" is something the model predicts rather than something imposed on it.
-
-```{code-cell} ipython3
-def new_tokenizer(docs, token_type='letter', **overrides):
-    """Build a config and its tokenizer from `docs`."""
-    config = CONFIG_DEFAULTS.copy()
-    config.update(overrides)
-    config['token_type'] = token_type
-    # Let there be a Tokenizer to translate strings to sequences of integers ("tokens") and back
-    config['uchars'] = sorted({t for d in docs for t in doc_to_tokens(d, token_type)}) # unique tokens become ids 0..n-1
-    config['vocab_size'] = len(config['uchars']) + 1             # +1 is for BOS
-    config['BOS'] = len(config['uchars'])                        # id of the Beginning of Sequence token
-    return config
-```
-
-## 3.4 Tokenizer plus weights — lines 167–183
-
-Not sure this really does anything anymore.
-
-A convenience wrapper: build the vocabulary, then hang a fresh set of weights off
-it. `init_params` is notebook 04's subject. Nothing in these notebooks calls this
-function — it exists for the command line — but it is the one place that shows the
-two halves belong to one object.
-
-The truncation warning matters on an unfamiliar corpus. Documents longer than
-`block_size` are silently cut short in the loop below, and on a corpus of song
-lyrics rather than names that is most of them.
-
-```{code-cell} ipython3
-def new_model_config(docs, token_type='letter', verbose=True, seed=None, **overrides):
-    """Build a tokenizer from `docs` and initialise a fresh set of weights."""
-    config = new_tokenizer(docs, token_type, **overrides)
-    init_params(config, seed)
-    if verbose:
-        block_size = config['block_size']
-        print(f"vocab size: {config['vocab_size']} ({token_type} tokens)")
-        print(f"Dimensions: {config['n_layer']} x  {config['n_embd']} x {config['n_embd']} ")
-        print(f"Num. Params: {len([p for mat in config['state_dict'].values() for row in mat for p in row])}")
-        # Documents longer than the context window are silently cut short by the
-        # `n = min(block_size, ...)` in train(). Worth saying out loud on an unfamiliar corpus.
-        over = sum(1 for d in docs if len(doc_to_tokens(d, token_type)) + 1 > block_size)
-        if over:
-            print(f"note: {over} of {len(docs)} documents ({100 * over / len(docs):.0f}%) are longer than "
-                  f"block_size={block_size} and will be truncated")
-    return config
-```
-
-## 3.5 What training needs — lines 185–198
+## 3.1 Hyperparametes for training
 
 Hyperparameters out of the config, then the flat list of every parameter in the
 model — `params` is what the optimiser walks, and its order is fixed by dict
@@ -163,50 +53,15 @@ def train(config, docs, num_steps=1000, verbose=True, logit_model=gpt,  **hyper)
     v = [0.0] * len(params) # second moment buffer
 ```
 
-## 3.6 One document at a time — lines 200–207
+## The Forward Step
 
-No batching. One step, one document, cycling with `%` so the corpus repeats.
+This assigns probabilities to the possible values at the next step in our sequence based on current state. In generation, we used this to choose a value. 
 
-The token sequence is wrapped in `BOS` at both ends, then `n` caps the number of
-positions at `block_size`. Note what `min` does on a long document: it truncates
-silently. The tail is not trained on.
+Now in Training a model we will use these probabilities with corpus examples to general loss functions - roughly, how "unlikely" the example we saw was given our model. We want to minimize this loss to make the observed data more likely. When we run through the forward step to get these probabilities we're calculating it all using Value objects, so we are also populating all the derivatives and metadata we need for this optimization. The Backward step collects all this afterwards so we can use it to update our models, then start again.
 
-```{code-cell} ipython3
-# Repeat in sequence
-for step in range(num_steps):
++++
 
-    # Take single document, tokenize it, surround it with BOS special token on both sides
-    # n determines the number of positions for truncation
-    doc = docs[step % len(docs)]
-    tokens = [BOS] + [uchars.index(tok) for tok in doc_to_tokens(doc, token_type)] + [BOS]
-    n = min(block_size, len(tokens) - 1)
-```
-
-## 3.7 The forward pass — lines 209–216
-
-A fresh KV cache per document, then one call to the model per position. At
-position `pos_id` the model sees `tokens[pos_id]` and is asked to predict
-`tokens[pos_id + 1]`.
-
-__This is what makes the corpus self-supervising: no labels exist, because every
-token is the label for the one before it. A document of length $n$ yields $n$
-training signals, not one.__
-
-`logit_model` is the same seam `generate` used — the loop never names the
-transformer.
-
-```{code-cell} ipython3
-# Forward the token sequence through the model, building up the computation graph all the way to the loss
-
-keys, values = [[] for _ in range(n_layer)], [[] for _ in range(n_layer)]
-losses = []
-for pos_id in range(n):
-    token_id, target_id = tokens[pos_id], tokens[pos_id + 1]
-
-    logits = logit_model(config, token_id, pos_id, keys, values)
-```
-
-## 3.8 Cross-entropy — lines 218–221
+## 3.2 Calculate Loss as Cross-entropy
 
 The logits become probabilities, and the loss is the negative log of the
 probability the model assigned to the token that actually came next:
@@ -228,13 +83,19 @@ number the loss starts at in the demo below.
     loss_t = -probs[target_id].log()
     losses.append(loss_t)
 loss = (1 / n) * sum(losses) # final average loss over the document sequence. May yours be low.
+
+# Backward the loss, calculating the gradients with respect to all model parameters
+loss.backward()
 ```
 
-## 3.9 Backward — lines 223–224
+## 3.3 Example: Training a Polynomial with Gradient descent
 
-One line, and notebook 02 is entirely about what it does. `loss` is the root of a
-graph containing every operation performed above; `backward()` walks that graph in
-reverse and leaves `p.grad` on every parameter.
+We won't be plotting derivatives so much as training complex models where we can't really visualize the space. Let's 
+use this computational machinery for gradient descent with our simple example, just to see it on its own before getting into the complexities that the GPT model uses it for.
+
+The graph is rebuilt from scratch each step, exactly as the training loop rebuilds
+the model's graph for every document — and `x.grad` is cleared each time, for the
+reason §2.5 gives.
 
 ```{code-cell} ipython3
 ---
@@ -242,15 +103,43 @@ editable: true
 slideshow:
   slide_type: ''
 ---
-# Backward the loss, calculating the gradients with respect to all model parameters
-loss.backward()
+# Not from the source: minimise f(x) = (x - 3)^2, whose minimum is obviously at x = 3.
+import sys; sys.path.insert(0, '..')   # karpathy.py lives one level up
+from karpathy import Value
+
+x = Value(-2.0)
+lr = 0.01
+
+for step in range(30):
+    if step % 5 == 0 or step == 29:
+        print(f"step {step:2d} | x {x.data:+.5f} | f(x) {y.data:.6f} | df/dx {x.grad:+.5f}")
+    #print(x.data)
+    y = f(x)   # forward: build a fresh graph
+    x.grad = 0           # clear last step's gradient
+    y.backward()         # backward: fill in dy/dx
+    x.data += lr * x.grad
+    
+```
+
+```{code-cell} ipython3
+x = Value(1.0)
+lr = 0.01
+
+for step in range(30):
+    if step % 5 == 0 or step == 29:
+        print(f"step {step:2d} | x {x.data:+.5f} | f(x) {y.data:.6f} | df/dx {x.grad:+.5f}")
+    #print(x.data)
+    y = f(x)   # forward: build a fresh graph
+    x.grad = 0           # clear last step's gradient
+    y.backward()         # backward: fill in dy/dx
+    x.data += lr * x.grad
 ```
 
 +++ {"editable": true, "slideshow": {"slide_type": ""}}
 
-## 3.10 The Adam update — lines 226–235
+## 3.4 The Adam update — lines 226–235
 
-Plain gradient descent would be `p.data -= lr * p.grad`. Adam keeps two running
+As above, plain gradient descent would be `p.data -= lr * p.grad`. We'll modify that - Adaptive Moment Estimation ("ADAM") keeps two running
 averages instead, and divides the first by the square root of the second:
 
 $$
@@ -288,7 +177,9 @@ for i, p in enumerate(params):
     p.grad = 0
 ```
 
-## 3.12 A model made of parameters
++++ {"editable": true, "slideshow": {"slide_type": ""}}
+
+## Example: Train the Bigram Model
 
 Let's return to the (still simple, non-GPT) model we ended the last notebook with. We've seen how to just build a model by vounting n-grams - let's apply this new training infrastructure to do it. 
 
@@ -318,10 +209,6 @@ $$
 
 Nothing in the training loop knows about counting. The agreement is what the
 gradient is for.
-
-+++ {"editable": true, "slideshow": {"slide_type": ""}}
-
-## Create the bigram model by training (instead of counting bigrams as above)
 
 ```{code-cell} ipython3
 ---
@@ -370,6 +257,67 @@ for a in range(V):
 print(f"learned vs counted, worst probability gap: {worst:.4f}\n")
 
 generate(config, num_samples=8, temperature=0.8, seed=3, logit_model=bigram)
+```
+
+## 3.6 Example: Train a Embedding & Generator
+
+Not from the source. Every section above described a matrix and asked you to accept
+that these matrices *are* the model's knowledge. At the default size that is an
+assertion — 4,192 numbers is not something you can look at. So shrink the model
+until it is.
+
+TODO: just read a simple, likely untrained model here. We just want to show the embedding...
+
+`n_embd=2, n_head=1, block_size=4` over a three-letter alphabet gives **72
+parameters**, every one of which fits on screen. `seed=` fixes the initialisation
+so the numbers stay put when the cell is re-run.
+
+The corpus is four documents, deliberately lopsided: `aba` three times and `abc`
+once. So after the prefix `ab`, the corpus says `a` three times in four and `c`
+once. If the weights really do encode the corpus, the model's predicted
+distribution should be exactly that:
+
+$$
+P_\theta(t \mid \texttt{ab}) \;=\; \hat{P}_{\text{corpus}}(t \mid \texttt{ab})
+\;=\; \left(\tfrac{3}{4},\, 0,\, \tfrac{1}{4},\, 0\right)
+$$
+
+Nothing forces this. It is what training is *for*.
+
+```{code-cell} ipython3
+# Not from the source: the whole model, small enough to print.
+import sys; sys.path.insert(0, '..')   # karpathy.py lives one level up
+import karpathy
+
+docs = ['aba', 'aba', 'aba', 'abc']    # after "ab": 'a' 3 times in 4, 'c' once
+config = karpathy.new_model_config(docs, verbose=False, seed=42,
+                                   n_embd=2, n_head=1, block_size=4)
+names = config['uchars'] + ['BOS']
+
+def next_token_probs(config, prefix):
+    """Run the model over `prefix` and return its distribution over what comes next."""
+    keys, values = [[] for _ in range(config['n_layer'])], [[] for _ in range(config['n_layer'])]
+    ids = [config['BOS']] + [config['uchars'].index(c) for c in prefix]
+    for pos_id, token_id in enumerate(ids):
+        logits = karpathy.gpt(config, token_id, pos_id, keys, values)
+    return [p.data for p in karpathy.softmax(logits)]
+
+show = lambda d: "  ".join(f"{n}={v:.2f}" for n, v in zip(names, d))
+
+total = sum(len(row) for mat in config['state_dict'].values() for row in mat)
+print(f"{total} parameters, vocabulary {config['vocab_size']}\n")
+print("before training, after 'ab':", show(next_token_probs(config, 'ab')))
+
+karpathy.train(config, docs, num_steps=3000, verbose=False)
+
+print("after  training, after 'ab':", show(next_token_probs(config, 'ab')))
+print("the corpus itself          :", show([0.75, 0.0, 0.25, 0.0]))
+
+print("\nevery weight in the model:")
+for name, mat in config['state_dict'].items():
+    print(f"\n{name}")
+    for row in mat:
+        print("   ", "  ".join(f"{p.data:+.4f}" for p in row))
 ```
 
 ```{code-cell} ipython3

@@ -37,6 +37,204 @@ knows there is a sequence.
 * Covers `karpathy.py` lines 70–73, 81–105 and 107–146 minus the attention interior:
 the model that has been standing in as `logit_model` for two notebooks.
 
++++
+
+## 3.2 The default configuration — lines 5–17
+
+Every dimension of the model, in one dict. `n_embd` is the width of a token's
+vector, `n_layer` the number of stacked blocks, `block_size` the furthest back
+attention can look, and `n_head` how many independent attention channels split
+that width. The remaining four are the optimiser's.
+
+`block_size=16` is not arbitrary: the longest name in `data/names.txt` is 15
+characters, plus one `BOS`.
+
+```{code-cell} ipython3
+CONFIG_DEFAULTS = {
+    'n_layer': 1,     # depth of the transformer neural network (number of layers)
+    'n_embd': 16,     # width of the network (embedding dimension)
+    'block_size': 16, # maximum context length of the attention window
+    'n_head': 4,      # number of attention heads
+    'token_type': 'letter',
+    'learning_rate': 0.01, 
+    'beta1': 0.85, 
+    'beta2': 0.99, 
+    'eps_adam': 1e-8
+}
+```
+
+## 3.4 Tokenizer plus weights — lines 167–183
+
+Not sure this really does anything anymore.
+
+A convenience wrapper: build the vocabulary, then hang a fresh set of weights off
+it. `init_params` is notebook 04's subject. Nothing in these notebooks calls this
+function — it exists for the command line — but it is the one place that shows the
+two halves belong to one object.
+
+The truncation warning matters on an unfamiliar corpus. Documents longer than
+`block_size` are silently cut short in the loop below, and on a corpus of song
+lyrics rather than names that is most of them.
+
+```{code-cell} ipython3
+def new_model_config(docs, token_type='letter', verbose=True, seed=None, **overrides):
+    """Build a tokenizer from `docs` and initialise a fresh set of weights."""
+    config = new_tokenizer(docs, token_type, **overrides)
+    init_params(config, seed)
+    if verbose:
+        block_size = config['block_size']
+        print(f"vocab size: {config['vocab_size']} ({token_type} tokens)")
+        print(f"Dimensions: {config['n_layer']} x  {config['n_embd']} x {config['n_embd']} ")
+        print(f"Num. Params: {len([p for mat in config['state_dict'].values() for row in mat for p in row])}")
+        # Documents longer than the context window are silently cut short by the
+        # `n = min(block_size, ...)` in train(). Worth saying out loud on an unfamiliar corpus.
+        over = sum(1 for d in docs if len(doc_to_tokens(d, token_type)) + 1 > block_size)
+        if over:
+            print(f"note: {over} of {len(docs)} documents ({100 * over / len(docs):.0f}%) are longer than "
+                  f"block_size={block_size} and will be truncated")
+    return config
+```
+
+## 3.1 Splitting a document into tokens — lines 149–154
+
+A *token* is whatever unit the model treats as indivisible. Two choices here:
+
+- **`letter`** — one character per token. `list(doc)` and nothing more.
+- **`word`** — whitespace-separated, lowercased, with the curly apostrophe folded
+  onto the straight one and punctuation trimmed off each end, so that `"Yeah,"`,
+  `"yeah"` and `"yeah!"` collapse to a single token rather than three.
+
+The choice changes only how many distinct tokens exist. Nothing downstream can
+tell the difference.
+
+```{code-cell} ipython3
+def doc_to_tokens(doc, token_type):
+    if token_type == 'letter':
+        return list(doc)
+    WORD_TRIM = '!"\'(),-.?—'
+    cleaned = (w.strip(WORD_TRIM) for w in doc.lower().replace('’', "'").split())
+    return [w for w in cleaned if w]
+```
+
+## 3.3 Building the vocabulary — lines 156–165
+
+Every distinct token in the corpus, sorted, becomes an integer id. Sorting matters
+— it makes the mapping reproducible across runs, which is why a saved model can
+ship its `uchars` and get the same ids back.
+
+`BOS` takes the one id past the end. It is a real token to the model, and it does
+double duty: it starts every sequence and it ends every sequence, so "the document
+is finished" is something the model predicts rather than something imposed on it.
+
+```{code-cell} ipython3
+def new_tokenizer(docs, token_type='letter', **overrides):
+    """Build a config and its tokenizer from `docs`."""
+    config = CONFIG_DEFAULTS.copy()
+    config.update(overrides)
+    config['token_type'] = token_type
+    # Let there be a Tokenizer to translate strings to sequences of integers ("tokens") and back
+    config['uchars'] = sorted({t for d in docs for t in doc_to_tokens(d, token_type)}) # unique tokens become ids 0..n-1
+    config['vocab_size'] = len(config['uchars']) + 1             # +1 is for BOS
+    config['BOS'] = len(config['uchars'])                        # id of the Beginning of Sequence token
+    return config
+```
+
+## 3.6 One document at a time — lines 200–207
+
+No batching. One step, one document, cycling with `%` so the corpus repeats.
+
+The token sequence is wrapped in `BOS` at both ends, then `n` caps the number of
+positions at `block_size`. Note what `min` does on a long document: it truncates
+silently. The tail is not trained on.
+
+```{code-cell} ipython3
+# Repeat in sequence
+for step in range(num_steps):
+
+    # Take single document, tokenize it, surround it with BOS special token on both sides
+    # n determines the number of positions for truncation
+    doc = docs[step % len(docs)]
+    tokens = [BOS] + [uchars.index(tok) for tok in doc_to_tokens(doc, token_type)] + [BOS]
+    n = min(block_size, len(tokens) - 1)
+```
+
+## 3.7 The forward pass — lines 209–216
+
+A fresh KV cache per document, then one call to the model per position. At
+position `pos_id` the model sees `tokens[pos_id]` and is asked to predict
+`tokens[pos_id + 1]`.
+
+__This is what makes the corpus self-supervising: no labels exist, because every
+token is the label for the one before it. A document of length $n$ yields $n$
+training signals, not one.__
+
+`logit_model` is the same seam `generate` used — the loop never names the
+transformer.
+
+```{code-cell} ipython3
+# Forward the token sequence through the model, building up the computation graph all the way to the loss
+
+keys, values = [[] for _ in range(n_layer)], [[] for _ in range(n_layer)]
+losses = []
+for pos_id in range(n):
+    token_id, target_id = tokens[pos_id], tokens[pos_id + 1]
+
+    logits = logit_model(config, token_id, pos_id, keys, values)
+```
+
+## 4.3 Initialising the Model — lines 84–105
+
+Every weight in the model, created here and updated in `train()`. This is also where we start to see the shape and flow of the model itself, so we'll talk a bit about what these matrices are. We start with three model level matrices providing the Embedding itself. 
+
+### Embedding
+We embed vectors in two spaces - `token` and `position-in-block` - into a common `hub space` of dimension `n_embd`, then back to tokens.
+
+#### Map Token Embedding ("mte")
+Map a token_id in our vacabulary (<= vacab_size) to a vector in our "Hub Space" - weights across `n_embd` logits. One row for each token_id, each row has `n_embd` weights, so a `vocab_size x n_embd` matrix.
+
+#### Map Position Embedding ("mpe")
+Map a position in a block (<= block_size) to a vector in our "Hub Space" - weights across `n_embd` logits. One row for each position_id, each row has `n_embd` weights, so a `block_length x n_embd` matrix.
+
+#### Language Model Head ("lm_head")
+Map an embedded_vecotr in our `hub space` back to a vector of logits in vocabulary space. `n_embd x vocab_size`
+
+### Attention
+
+and six more per layer: four for attention (`wq`, `wk`, `wv`, `wo`) and 
+
+### Multiple Layer Perceptron ("MLP")
+MLP which widens to `4 * n_embd` and back. That `4` is inherited from GPT-2 and is
+where most of the parameters live.
+
+`head_dim` is set here because it is derived, not chosen: the width is split evenly
+across heads, so `n_embd` must divide by `n_head`.
+
+We initialize `a priori` with Gaussian noise at `std=0.08` — small enough that the initial logits are nearly uniform,
+which is why training starts near $\log V$.
+
+```{code-cell} ipython3
+def init_params(config, seed=None):
+    """Initialise a fresh set of weights in `config`, in place."""
+    random.seed(seed)
+    config['head_dim'] = config['n_embd'] // config['n_head']    # derived dimension of each head
+
+    # Initialize the parameters, to store the knowledge of the model
+    n_embd, vocab_size, block_size = config['n_embd'], config['vocab_size'], config['block_size']
+
+    matrix = lambda nout, nin, std=0.08: [[Value(random.gauss(0, std)) for _ in range(nin)] for _ in range(nout)]
+
+    state_dict = {'wte': matrix(vocab_size, n_embd), 'wpe': matrix(block_size, n_embd), 'lm_head': matrix(vocab_size, n_embd)}
+    for i in range(config['n_layer']):
+        state_dict[f'layer{i}.attn_wq'] = matrix(n_embd, n_embd)
+        state_dict[f'layer{i}.attn_wk'] = matrix(n_embd, n_embd)
+        state_dict[f'layer{i}.attn_wv'] = matrix(n_embd, n_embd)
+        state_dict[f'layer{i}.attn_wo'] = matrix(n_embd, n_embd)
+        state_dict[f'layer{i}.mlp_fc1'] = matrix(4 * n_embd, n_embd)
+        state_dict[f'layer{i}.mlp_fc2'] = matrix(n_embd, 4 * n_embd)
+    config['state_dict'] = state_dict
+    return config
+```
+
 +++ {"editable": true, "slideshow": {"slide_type": ""}}
 
 ## 4.1 `linear` — lines 81–82
@@ -130,120 +328,6 @@ of the differences the header comment refers to.
 ```{code-cell} ipython3
 logits = linear(x, state_dict['lm_head'])
 return logits
-```
-
-## 4.8 A model small enough to read
-
-Not from the source. Every section above described a matrix and asked you to accept
-that these matrices *are* the model's knowledge. At the default size that is an
-assertion — 4,192 numbers is not something you can look at. So shrink the model
-until it is.
-
-TODO: just read a simple, likely untrained model here. We just want to show the embedding...
-
-`n_embd=2, n_head=1, block_size=4` over a three-letter alphabet gives **72
-parameters**, every one of which fits on screen. `seed=` fixes the initialisation
-so the numbers stay put when the cell is re-run.
-
-The corpus is four documents, deliberately lopsided: `aba` three times and `abc`
-once. So after the prefix `ab`, the corpus says `a` three times in four and `c`
-once. If the weights really do encode the corpus, the model's predicted
-distribution should be exactly that:
-
-$$
-P_\theta(t \mid \texttt{ab}) \;=\; \hat{P}_{\text{corpus}}(t \mid \texttt{ab})
-\;=\; \left(\tfrac{3}{4},\, 0,\, \tfrac{1}{4},\, 0\right)
-$$
-
-Nothing forces this. It is what training is *for*.
-
-```{code-cell} ipython3
-# Not from the source: the whole model, small enough to print.
-import sys; sys.path.insert(0, '..')   # karpathy.py lives one level up
-import karpathy
-
-docs = ['aba', 'aba', 'aba', 'abc']    # after "ab": 'a' 3 times in 4, 'c' once
-config = karpathy.new_model_config(docs, verbose=False, seed=42,
-                                   n_embd=2, n_head=1, block_size=4)
-names = config['uchars'] + ['BOS']
-
-def next_token_probs(config, prefix):
-    """Run the model over `prefix` and return its distribution over what comes next."""
-    keys, values = [[] for _ in range(config['n_layer'])], [[] for _ in range(config['n_layer'])]
-    ids = [config['BOS']] + [config['uchars'].index(c) for c in prefix]
-    for pos_id, token_id in enumerate(ids):
-        logits = karpathy.gpt(config, token_id, pos_id, keys, values)
-    return [p.data for p in karpathy.softmax(logits)]
-
-show = lambda d: "  ".join(f"{n}={v:.2f}" for n, v in zip(names, d))
-
-total = sum(len(row) for mat in config['state_dict'].values() for row in mat)
-print(f"{total} parameters, vocabulary {config['vocab_size']}\n")
-print("before training, after 'ab':", show(next_token_probs(config, 'ab')))
-
-karpathy.train(config, docs, num_steps=3000, verbose=False)
-
-print("after  training, after 'ab':", show(next_token_probs(config, 'ab')))
-print("the corpus itself          :", show([0.75, 0.0, 0.25, 0.0]))
-
-print("\nevery weight in the model:")
-for name, mat in config['state_dict'].items():
-    print(f"\n{name}")
-    for row in mat:
-        print("   ", "  ".join(f"{p.data:+.4f}" for p in row))
-```
-
-## 4.3 Initialising the Model — lines 84–105
-
-Every weight in the model, created here and updated in `train()`. This is also where we start to see the shape and flow of the model itself, so we'll talk a bit about what these matrices are. We start with three model level matrices providing the Embedding itself. 
-
-### Embedding
-We embed vectors in two spaces - `token` and `position-in-block` - into a common `hub space` of dimension `n_embd`, then back to tokens.
-
-#### Map Token Embedding ("mte")
-Map a token_id in our vacabulary (<= vacab_size) to a vector in our "Hub Space" - weights across `n_embd` logits. One row for each token_id, each row has `n_embd` weights, so a `vocab_size x n_embd` matrix.
-
-#### Map Position Embedding ("mpe")
-Map a position in a block (<= block_size) to a vector in our "Hub Space" - weights across `n_embd` logits. One row for each position_id, each row has `n_embd` weights, so a `block_length x n_embd` matrix.
-
-#### Language Model Head ("lm_head")
-Map an embedded_vecotr in our `hub space` back to a vector of logits in vocabulary space. `n_embd x vocab_size`
-
-### Attention
-
-and six more per layer: four for attention (`wq`, `wk`, `wv`, `wo`) and 
-
-### Multiple Layer Perceptron ("MLP")
-MLP which widens to `4 * n_embd` and back. That `4` is inherited from GPT-2 and is
-where most of the parameters live.
-
-`head_dim` is set here because it is derived, not chosen: the width is split evenly
-across heads, so `n_embd` must divide by `n_head`.
-
-We initialize `a priori` with Gaussian noise at `std=0.08` — small enough that the initial logits are nearly uniform,
-which is why training starts near $\log V$.
-
-```{code-cell} ipython3
-def init_params(config, seed=None):
-    """Initialise a fresh set of weights in `config`, in place."""
-    random.seed(seed)
-    config['head_dim'] = config['n_embd'] // config['n_head']    # derived dimension of each head
-
-    # Initialize the parameters, to store the knowledge of the model
-    n_embd, vocab_size, block_size = config['n_embd'], config['vocab_size'], config['block_size']
-
-    matrix = lambda nout, nin, std=0.08: [[Value(random.gauss(0, std)) for _ in range(nin)] for _ in range(nout)]
-
-    state_dict = {'wte': matrix(vocab_size, n_embd), 'wpe': matrix(block_size, n_embd), 'lm_head': matrix(vocab_size, n_embd)}
-    for i in range(config['n_layer']):
-        state_dict[f'layer{i}.attn_wq'] = matrix(n_embd, n_embd)
-        state_dict[f'layer{i}.attn_wk'] = matrix(n_embd, n_embd)
-        state_dict[f'layer{i}.attn_wv'] = matrix(n_embd, n_embd)
-        state_dict[f'layer{i}.attn_wo'] = matrix(n_embd, n_embd)
-        state_dict[f'layer{i}.mlp_fc1'] = matrix(4 * n_embd, n_embd)
-        state_dict[f'layer{i}.mlp_fc2'] = matrix(n_embd, 4 * n_embd)
-    config['state_dict'] = state_dict
-    return config
 ```
 
 ## 4.9 The embedding on its own

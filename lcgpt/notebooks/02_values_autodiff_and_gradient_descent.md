@@ -55,39 +55,24 @@ model builds hundreds of thousands of these.
 
 ## 2.2 Standard operations — lines 28–34
 
+We will overload addition and multiplication to include the partial derivative calculations, then use these for other operations and get it for free. We'll do the same for a few basic building block functions.
 
-Addition and multiplication, each recording what it was built from and what its
-local derivatives are.
 
-For $c = a + b$ the derivatives are $\partial c/\partial a = 1$ and
-$\partial c/\partial b = 1$ — hence `(1, 1)`. Addition passes gradient through
-unchanged, which is exactly why the residual connections of notebook 04 will keep
-the backward path short.
+For $c = a + b$ the derivatives are ($\partial c/\partial a$, $\partial c/\partial b$ = $(1,1)$. For $c = a \cdot b$ they are ($\partial c/\partial a = b$,
+$\partial c/\partial b = a$) — hence `(other.data, self.data)'.
 
-For $c = a \cdot b$ they are $\partial c/\partial a = b$ and
-$\partial c/\partial b = a$ — hence `(other.data, self.data)`, each factor's
-derivative being the *other* factor.
-
-The `isinstance` line lets a bare float appear on either side of an operator by
-wrapping it in a `Value` with no children, which makes it a leaf the graph simply
-stops at.
-
-## 2.3 Operators derived from the primitives — lines 40–46
-
-Subtraction, division and negation add no new derivative rules. They are rewrites
-into `+` and `*`:
-
+We'll also want a few other derivatives available:
 $$
--a = a \cdot (-1)
+\frac{d}{dx}x^{n} = n x^{n-1}
 \qquad
-a - b = a + (-b)
+\frac{d}{dx}\log x = \frac{1}{x}
 \qquad
-a / b = a \cdot b^{-1}
+\frac{d}{dx}e^{x} = e^{x}
+\qquad
+\frac{d}{dx}\max(0, x) = [\,x > 0\,]
 $$
 
-So `a / b` builds two nodes — a `__pow__` and a `__mul__` — and the chain rule
-handles the quotient rule for free. The `__r*__` variants catch the case where a
-plain float is on the left, as in `(1 / n) * sum(losses)` on line 221.
+These four plus `+` and `*` are the entire vocabulary of the Value `autodifferentiation`. That the entire toolbox we'll need to build, apply, and train the algorithms and models we'll need.
 
 ```{code-cell} ipython3
 ---
@@ -119,35 +104,7 @@ def __rsub__(self, other): return other + (-self)
 def __rmul__(self, other): return self * other
 def __truediv__(self, other): return self * other**-1
 def __rtruediv__(self, other): return other * self**-1
-```
 
-## 2.4 Unary operations — lines 36–39
-
-Four one-liners, each following the same pattern: the forward value, a
-single-element children tuple, and the local derivative.
-
-$$
-\frac{d}{dx}x^{n} = n x^{n-1}
-\qquad
-\frac{d}{dx}\log x = \frac{1}{x}
-\qquad
-\frac{d}{dx}e^{x} = e^{x}
-\qquad
-\frac{d}{dx}\max(0, x) = [\,x > 0\,]
-$$
-
-These four plus `+` and `*` are the entire vocabulary of the model. `log` appears
-in the cross-entropy loss, `exp` in the softmax, `relu` in the MLP, and `__pow__`
-in `rmsnorm` and in Adam's square root.
-
-ReLU's derivative at exactly zero is a convention — `float(self.data > 0)` picks 0.
-
-```{code-cell} ipython3
----
-editable: true
-slideshow:
-  slide_type: ''
----
 def __pow__(self, other): return Value(self.data**other, (self,), (other * self.data**(other-1),))
 def log(self): return Value(math.log(self.data), (self,), (1/self.data,))
 def exp(self): return Value(math.exp(self.data), (self,), (math.exp(self.data),))
@@ -156,8 +113,7 @@ def relu(self): return Value(max(0, self.data), (self,), (float(self.data > 0),)
 
 ## 2.5 `backward()` — lines 48–61
 
-This is a big deal. We're going to build gradient descent to run on our network of these Value nodes, more-or-less independent of the model. 
-Two phases.
+When we've used Values to perform some computation - generally the "Forward" pass, where we take the state at time $t$ and estimate it at time $T+1$ - we'll have left a trail of partial derivatives for each "atom" of computation involved - each operation. We then traverse this trail and gather up the total derivative at that point. This takes two stages:
 
 **Topological sort.** A depth-first walk from the root, appending each node *after*
 its children, with a `visited` set so a node reached by several paths is emitted
@@ -180,9 +136,6 @@ The `+=` matters. A node used in several places — a weight touched at every
 position of a document — receives a contribution from each, and they sum. It is
 also why `train` must reset `p.grad = 0` on line 235: nothing here clears anything.
 
-Note that `build_topo` recurses, so graph depth is bounded by Python's recursion
-limit. Depth grows with document length, not with corpus size.
-
 ```{code-cell} ipython3
 def backward(self):
     topo = []
@@ -202,25 +155,19 @@ def backward(self):
 
 ## 2.6 Derivatives for free
 
-Not from the source. Everything above is the whole mechanism; this is what it buys,
-on a function with no model anywhere near it — a cubic and its slope.
+This is powerful machinery we'll use to train our embeddings and algorithms soon. First, an example: we'll define a simple cubic polynomial and run some points through it then verify we can recover the derivative since we know the analytic answer in this case.
 
 $$
 f(x) = 2x^{3} - 3x^{2} - 12x + 5
-\qquad
+$$
+Thus from Calculus I, we know:
+$$
 f'(x) = 6x^{2} - 6x - 12 = 6(x+1)(x-2)
 $$
 
 `f` is written once, in ordinary Python, with `Value` in place of `float`.
 Evaluating it builds a graph; `backward()` walks that graph and leaves $f'(x)$ in
-`x.grad`. No derivative of $f$ was ever coded — only the derivatives of $x^{n}$,
-$+$ and $\times$ were, in §2.2 and §2.4, and the chain rule of §2.5 assembled the
-rest. The analytic $f'$ is plotted over the top as a check; the two agree to
-floating-point round-off (~1e-15, printed by the cell).
-
-The dotted verticals sit at $x = -1$ and $x = 2$, the roots of $f'$. Where the
-derivative crosses zero, $f$ is flat — which is the entire fact the next section,
-and all of training, runs on.
+`x.grad`.
 
 ```{code-cell} ipython3
 ---
@@ -264,45 +211,6 @@ for side in ('top', 'right'):
 for side in ('left', 'bottom'):
     ax.spines[side].set_color('0.75')
 plt.show()
-```
-
-## 2.7 Gradient descent, on its own
-
-Not from the source. The smallest thing that exercises everything above: a scalar
-function with a known minimum, descended by hand.
-
-$$
-f(x) = (x-3)^2
-\qquad
-f'(x) = 2(x-3)
-$$
-
-We'll use this computational machinery for this simple example, just to see it on its own before getting into the complexities that the GPT model uses it for.
-
-The graph is rebuilt from scratch each step, exactly as the training loop rebuilds
-the model's graph for every document — and `x.grad` is cleared each time, for the
-reason §2.5 gives.
-
-```{code-cell} ipython3
----
-editable: true
-slideshow:
-  slide_type: ''
----
-# Not from the source: minimise f(x) = (x - 3)^2, whose minimum is obviously at x = 3.
-import sys; sys.path.insert(0, '..')   # karpathy.py lives one level up
-from karpathy import Value
-
-x = Value(-2.0)
-lr = 0.1
-
-for step in range(30):
-    y = (x - 3.0) ** 2   # forward: build a fresh graph
-    x.grad = 0           # clear last step's gradient
-    y.backward()         # backward: fill in dy/dx
-    x.data -= lr * x.grad
-    if step % 5 == 0 or step == 29:
-        print(f"step {step:2d} | x {x.data:+.5f} | f(x) {y.data:.6f} | df/dx {x.grad:+.5f}")
 ```
 
 ```{code-cell} ipython3
