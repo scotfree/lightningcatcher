@@ -5,3 +5,6 @@ input.txt
 model.json
 data/beatles_first3.txt
 model*.json
+data/nottingham/
+data/melodies*.txt
+data/melody_runs/

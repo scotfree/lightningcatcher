@@ -85,7 +85,8 @@ describing what a specific cell does, nothing more. No narrative voice.
 ## Environment
 
 - `.venv/` here — system Python 3.9.6, no Homebrew. jupyterlab, jupytext,
-  matplotlib, numpy, ipykernel.
+  matplotlib, numpy, ipykernel, and music21 (8.3, corpus preparation only --
+  `tools/abc_to_phrases.py`; nothing in the anchor or notebooks imports it).
 - Registered kernel: **`lcgpt`** / display name "LightningcatcherGPT". User-level
   kernelspec, so any Jupyter server on this machine can see it.
 - Notebooks need a server rooted **here**; one rooted elsewhere cannot navigate
@@ -128,8 +129,8 @@ first notebook:
    06.** Conversely, 06 is the one notebook where "Run All" *must* be clean,
    because it has no verbatim source fragments.
 
-Follow-ups: fine-tuning, deployment, entropy/Markov. Still separate nodes (07+);
-§6.5 closes by pointing at them.
+Follow-ups: fine-tuning, deployment, entropy/Markov. Still separate nodes (08+;
+07 is now melodies, below); §6.5 closes by pointing at them.
 
 The reason for the order: each notebook establishes the interface
 `(config, token_id, pos_id, keys, values) -> logits` and then a later one gives a
@@ -191,6 +192,39 @@ Notebook demo cells must `sys.path.insert(0, '..')` before importing `karpathy`
 or `lcgpt`: Jupyter's working directory is `notebooks/` and the modules are one
 level up. Two demos shipped broken for a day because this was only ever tested
 with the path injected from outside the cell.
+
+## Melodies: notebook 07, in progress (started 2026-10-19)
+
+A second corpus with enough structure to be interesting and few enough tokens to
+see: folk-tune phrases, one note per character, so the anchor's letter tokenizer
+reads them unchanged. **07 is not written yet** -- it is blocked on the measurements
+in GitHub issue #4.
+
+- **Corpus**: `tools/abc_to_phrases.py --fetch` pulls the Nottingham Music Database
+  (jukedeck's cleaned ABC, pinned commit) into `data/nottingham/`, transposes each
+  two-bar phrase to the white keys **by key signature** (so every mode lands there),
+  and writes `data/melodies_c.txt`. A phrase with one accidental is dropped, not the
+  tune. 1,034 tunes → 10,269 phrases, ~30% duplicates.
+- **Tokens**: `--tokens octave` (default, C4–B5 → `CDEFGAB`/`cdefgab`, vocab 15
+  with BOS) or `--tokens pitch` (7 + BOS). Scot chose octave; pitch is kept as a
+  comparison. Rhythm is ignored, deliberately, for now. Phrases are documents
+  because whole tunes overflow `block_size=16`; two bars fit.
+- **music21, not a hand-written ABC parser** -- Scot's call: it is corpus prep, not
+  the subject of any notebook, so not worth reinventing.
+- **Nothing derived from the corpus is committed**: `data/nottingham/`,
+  `data/melodies*.txt` and `data/melody_runs/` are gitignored. The dataset is
+  GPL-3.0; licensing is deferred until 07 is to be shared (issue #6). Scot's view:
+  bare note sequences in short phrases are low copyright risk. 07's corpus cells
+  get the `beatles-output` tag for now so the hook strips them.
+- **Measuring**: `tools/measure_melodies.py CORPUS TAG n_embd n_head steps` reports
+  held-out loss against unigram/bigram baselines; `tools/plot_melody_embeddings.py
+  TAG` draws the 3D embeddings. ~4 ms/step at 3D, ~120 ms/step at 16D.
+  **`train()` walks docs in order** -- shuffle the phrases first, or consecutive
+  steps come from the same tune.
+- **Finding**: at `n_embd=3` the model matches the bigram baseline and no more
+  (attention adds nothing); at 16D it beats bigram. The 3D token embeddings *are*
+  ordered by pitch -- unlike the dialect corpus in open issue 1 -- so the "plot the
+  embeddings" payoff exists here. Plots: matplotlib 3D only for now (Scot's call).
 
 ## Open issues
 
